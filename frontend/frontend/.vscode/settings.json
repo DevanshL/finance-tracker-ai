@@ -1,0 +1,15 @@
+{
+  "files.associations": {
+    "*.css": "tailwindcss",
+    "*.pcss": "tailwindcss"
+  },
+  "tailwindCSS.includeLanguages": {
+    "css": "tailwindcss",
+    "postcss": "tailwindcss",
+    "scss": "tailwindcss"
+  },
+  "css.validate": false,
+  "css.lint.unknownAtRules": "ignore",
+  "editor.quickSuggestions": { "strings": true },
+  "stylelint.enable": false
+}
