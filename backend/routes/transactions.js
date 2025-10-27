@@ -9,8 +9,16 @@ const {
   updateTransaction,
   deleteTransaction,
   getTransactionSummary,
-  getRecentTransactions
+  getRecentTransactions,
+  exportTransactions,
+  importTransactions
 } = require('../controllers/transactionController');
+
+const {
+  createBulkTransactions,
+  deleteBulkTransactions,
+  updateBulkTransactions
+} = require('../controllers/bulkController');
 
 // Import middleware
 const { protect } = require('../middleware/auth');
@@ -23,11 +31,20 @@ const {
 // All routes require authentication
 router.use(protect);
 
-// Summary and recent routes (must come before /:id)
+// IMPORTANT: Specific routes MUST come before /:id routes!
+
+// Summary and special routes
 router.get('/summary', getTransactionSummary);
 router.get('/recent', getRecentTransactions);
+router.get('/export', exportTransactions);
+router.post('/import', importTransactions);
 
-// Main CRUD routes
+// Bulk operations - MUST be before /:id
+router.post('/bulk', createBulkTransactions);
+router.put('/bulk', updateBulkTransactions);
+router.delete('/bulk', deleteBulkTransactions);
+
+// Main CRUD routes (/:id must be last!)
 router.route('/')
   .get(paginationValidation, getTransactions)
   .post(transactionValidation, createTransaction);

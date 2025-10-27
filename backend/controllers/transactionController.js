@@ -2,6 +2,7 @@ const Transaction = require('../models/Transaction');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { HTTP_STATUS, SUCCESS_MESSAGES } = require('../config/constants');
 const { getPagination, getPaginationInfo, getDateRange } = require('../utils/helpers');
+const { transactionsToCSV, csvToTransactions } = require('../utils/csvHandler');
 
 /**
  * @desc    Get all transactions for logged in user
@@ -281,6 +282,70 @@ const getRecentTransactions = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Export transactions to CSV
+ * @route   GET /api/transactions/export
+ * @access  Private
+ */
+const exportTransactions = asyncHandler(async (req, res) => {
+  const { startDate, endDate, type } = req.query;
+
+  const query = { userId: req.user._id };
+
+  if (type) query.type = type;
+  if (startDate || endDate) {
+    query.date = {};
+    if (startDate) query.date.$gte = new Date(startDate);
+    if (endDate) query.date.$lte = new Date(endDate);
+  }
+
+  const transactions = await Transaction.find(query).sort({ date: -1 });
+
+  if (transactions.length === 0) {
+    throw new AppError('No transactions found to export', HTTP_STATUS.NOT_FOUND);
+  }
+
+  const csv = transactionsToCSV(transactions);
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename=transactions-${Date.now()}.csv`);
+  res.status(HTTP_STATUS.OK).send(csv);
+});
+
+/**
+ * @desc    Import transactions from CSV
+ * @route   POST /api/transactions/import
+ * @access  Private
+ */
+const importTransactions = asyncHandler(async (req, res) => {
+  const { csvData } = req.body;
+
+  if (!csvData) {
+    throw new AppError('CSV data is required', HTTP_STATUS.BAD_REQUEST);
+  }
+
+  // Parse CSV
+  const transactions = csvToTransactions(csvData);
+
+  // Add userId to all transactions
+  const transactionsWithUser = transactions.map(t => ({
+    ...t,
+    userId: req.user._id
+  }));
+
+  // Insert transactions
+  const created = await Transaction.insertMany(transactionsWithUser);
+
+  res.status(HTTP_STATUS.CREATED).json({
+    success: true,
+    message: `Successfully imported ${created.length} transactions`,
+    data: {
+      count: created.length,
+      transactions: created
+    }
+  });
+});
+
 module.exports = {
   getTransactions,
   getTransaction,
@@ -288,5 +353,7 @@ module.exports = {
   updateTransaction,
   deleteTransaction,
   getTransactionSummary,
-  getRecentTransactions
+  getRecentTransactions,
+  exportTransactions,
+  importTransactions
 };
