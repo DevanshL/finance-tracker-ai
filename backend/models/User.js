@@ -24,7 +24,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please provide a password'],
     minlength: [6, 'Password must be at least 6 characters'],
-    select: false // Don't return password by default
+    select: false
   },
   monthlyIncome: {
     type: Number,
@@ -51,27 +51,18 @@ const userSchema = new mongoose.Schema({
   resetPasswordToken: String,
   resetPasswordExpire: Date
 }, {
-  timestamps: true // Adds createdAt and updatedAt automatically
+  timestamps: true
 });
-
-// Indexes for performance
-// userSchema.index({ email: 1 });
-userSchema.index({ createdAt: -1 });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
-  // Only hash if password is modified
   if (!this.isModified('password')) {
     return next();
   }
 
   try {
-    // Generate salt
     const salt = await bcrypt.genSalt(10);
-    
-    // Hash password
     this.password = await bcrypt.hash(this.password, salt);
-    
     next();
   } catch (error) {
     next(error);
@@ -114,6 +105,4 @@ userSchema.statics.findByCredentials = async function(email, password) {
   return user;
 };
 
-const User = mongoose.model('User', userSchema);
-
-module.exports = User;
+module.exports = mongoose.models.User || mongoose.model('User', userSchema);

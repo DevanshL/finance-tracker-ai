@@ -11,11 +11,17 @@ dotenv.config();
 // Import database connection
 const connectDB = require('./config/db');
 
+// Import category seeder
+const { seedDefaultCategories } = require('./utils/seedCategories');
+
 // Import error handler
 const { errorHandler } = require('./middleware/errorHandler');
 
 // Connect to MongoDB
-connectDB();
+connectDB().then(() => {
+  // Seed default categories after DB connection
+  seedDefaultCategories();
+});
 
 // Initialize Express app
 const app = express();
@@ -130,8 +136,11 @@ app.get('/api', (req, res) => {
 // Auth routes
 app.use('/api/auth', require('./routes/auth'));
 
-// Other routes (will be added later)
-// app.use('/api/transactions', require('./routes/transactions'));
+// Transaction routes
+app.use('/api/transactions', require('./routes/transactions'));
+
+// Category routes
+app.use('/api/categories', require('./routes/categories'));
 // app.use('/api/budgets', require('./routes/budgets'));
 // app.use('/api/goals', require('./routes/goals'));
 // app.use('/api/analytics', require('./routes/analytics'));
