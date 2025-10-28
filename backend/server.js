@@ -71,7 +71,8 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     nodeVersion: process.version,
-    database: 'Connected'
+    database: 'Connected',
+    aiEnabled: !!process.env.GEMINI_API_KEY
   });
 });
 
@@ -79,84 +80,29 @@ app.get('/health', (req, res) => {
 app.get('/api', (req, res) => {
   res.json({
     success: true,
-    message: '🚀 Finance Tracker API v1.0',
+    message: '🚀 Finance Tracker AI - Complete Backend API',
     version: '1.0.0',
     status: 'active',
     timestamp: new Date().toISOString(),
-    endpoints: {
-      health: 'GET /health',
-      api: 'GET /api',
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login',
-        getMe: 'GET /api/auth/me'
-      },
-      transactions: {
-        getAll: 'GET /api/transactions',
-        getOne: 'GET /api/transactions/:id',
-        create: 'POST /api/transactions',
-        update: 'PUT /api/transactions/:id',
-        delete: 'DELETE /api/transactions/:id',
-        summary: 'GET /api/transactions/summary'
-      },
-      categories: {
-        getAll: 'GET /api/categories',
-        getOne: 'GET /api/categories/:id',
-        create: 'POST /api/categories',
-        update: 'PUT /api/categories/:id',
-        delete: 'DELETE /api/categories/:id'
-      },
-      budgets: {
-        getAll: 'GET /api/budgets',
-        getOne: 'GET /api/budgets/:id',
-        create: 'POST /api/budgets',
-        update: 'PUT /api/budgets/:id',
-        delete: 'DELETE /api/budgets/:id',
-        alerts: 'GET /api/budgets/alerts'
-      },
-      goals: {
-        getAll: 'GET /api/goals',
-        getOne: 'GET /api/goals/:id',
-        create: 'POST /api/goals',
-        update: 'PUT /api/goals/:id',
-        delete: 'DELETE /api/goals/:id',
-        contribute: 'POST /api/goals/:id/contribute',
-        withdraw: 'POST /api/goals/:id/withdraw',
-        stats: 'GET /api/goals/stats'
-      },
-      analytics: {
-        dashboard: 'GET /api/analytics/dashboard',
-        overview: 'GET /api/analytics/overview',
-        categories: 'GET /api/analytics/categories',
-        trends: 'GET /api/analytics/trends',
-        monthly: 'GET /api/analytics/monthly',
-        budgetPerformance: 'GET /api/analytics/budget-performance',
-        goalProgress: 'GET /api/analytics/goal-progress',
-        insights: 'GET /api/analytics/insights',
-        comparison: 'GET /api/analytics/comparison',
-        topCategories: 'GET /api/analytics/top-categories',
-        report: 'GET /api/analytics/report'
-      },
-      export: {
-        transactionsCSV: 'GET /api/export/transactions/csv',
-        budgetsCSV: 'GET /api/export/budgets/csv',
-        goalsCSV: 'GET /api/export/goals/csv',
-        reportPDF: 'GET /api/export/report/pdf',
-        allJSON: 'GET /api/export/all/json'
-      },
-      search: {
-        global: 'GET /api/search',
-        advancedTransactions: 'GET /api/search/transactions/advanced'
-      },
-      notifications: {
-        getAll: 'GET /api/notifications',
-        markRead: 'POST /api/notifications/read'
-      },
-      preferences: {
-        get: 'GET /api/preferences',
-        update: 'PUT /api/preferences'
-      }
-    }
+    weeks: {
+      week1: '✅ Days 1-7: Core Features',
+      week2: '✅ Days 8-14: Analytics & Advanced',
+      week3: '✅ Days 15-21: AI & Automation'
+    },
+    totalEndpoints: '70+',
+    features: [
+      'Authentication & Authorization',
+      'Transaction Management',
+      'Budget Tracking',
+      'Goal Management',
+      'Advanced Analytics',
+      'Data Export (CSV, PDF, JSON)',
+      'Global Search',
+      'Smart Notifications',
+      'AI-Powered Insights',
+      'Recurring Transactions',
+      'Custom Reports'
+    ]
   });
 });
 
@@ -164,63 +110,34 @@ app.get('/api', (req, res) => {
 // MOUNT ROUTES
 // ==============================================
 
-// Auth routes
+// Week 1: Core Features (Days 1-7)
 app.use('/api/auth', require('./routes/auth'));
-
-// Transaction routes
 app.use('/api/transactions', require('./routes/transactions'));
-
-// Category routes
 app.use('/api/categories', require('./routes/categories'));
-
-// Budget routes
 app.use('/api/budgets', require('./routes/budgets'));
-
-// Goal routes
 app.use('/api/goals', require('./routes/goals'));
 
-// Analytics routes (Day 9)
+// Week 2: Analytics & Advanced (Days 8-14)
 app.use('/api/analytics', require('./routes/analytics'));
-
-// Export routes (Day 10)
 app.use('/api/export', require('./routes/export'));
-
-// Search routes (Day 11-12)
 app.use('/api/search', require('./routes/search'));
-
-// Notification routes (Day 11-12)
 app.use('/api/notifications', require('./routes/notifications'));
-
-// Preferences routes (Day 11-12)
 app.use('/api/preferences', require('./routes/preferences'));
 
-// AI routes (coming soon)
-// app.use('/api/ai', require('./routes/ai'));
+// Week 3: AI & Automation (Days 15-21)
+app.use('/api/ai', require('./routes/ai'));
+app.use('/api/recurring-transactions', require('./routes/recurringTransactions'));
+app.use('/api/reports', require('./routes/reports'));
 
 // ==============================================
 // ERROR HANDLING
 // ==============================================
 
-// 404 Handler - Must be after all routes
+// 404 Handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route ${req.method} ${req.originalUrl} not found`,
-    availableRoutes: [
-      'GET /health',
-      'GET /api',
-      'POST /api/auth/register',
-      'POST /api/auth/login',
-      'GET /api/transactions',
-      'GET /api/categories',
-      'GET /api/budgets',
-      'GET /api/goals',
-      'GET /api/analytics/dashboard',
-      'GET /api/export/transactions/csv',
-      'GET /api/search',
-      'GET /api/notifications',
-      'GET /api/preferences'
-    ]
+    message: `Route ${req.method} ${req.originalUrl} not found`
   });
 });
 
@@ -234,26 +151,44 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
   console.log('\n' + '='.repeat(70));
-  console.log('  💰 FINANCE TRACKER API - BACKEND SERVER');
+  console.log('  💰 FINANCE TRACKER AI - COMPLETE BACKEND API');
   console.log('='.repeat(70));
   console.log(`  ✅ Status: Running`);
   console.log(`  🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`  🚀 Server: http://localhost:${PORT}`);
   console.log(`  🔥 API Base: http://localhost:${PORT}/api`);
   console.log(`  💚 Health: http://localhost:${PORT}/health`);
-  console.log(`  📦 Dependencies: All loaded locally`);
-  console.log(`  🗄️  Database: ${process.env.MONGODB_URI ? 'Configured' : 'Not configured'}`);
-  console.log(`  🔐 JWT: ${process.env.JWT_SECRET ? 'Configured' : 'Not configured'}`);
-  console.log(`  🤖 Gemini AI: ${process.env.GEMINI_API_KEY ? 'Configured' : 'Not configured'}`);
+  console.log(`  🗄️  Database: ${process.env.MONGODB_URI ? 'Configured ✅' : 'Not configured ⚠️'}`);
+  console.log(`  🔐 JWT: ${process.env.JWT_SECRET ? 'Configured ✅' : 'Not configured ⚠️'}`);
+  console.log(`  🤖 Gemini AI: ${process.env.GEMINI_API_KEY ? 'Configured ✅' : 'Not configured ⚠️'}`);
   console.log('='.repeat(70));
-  console.log('  📊 NEW FEATURES (Days 9-12):');
-  console.log('     ✅ Analytics System (11 endpoints)');
-  console.log('     ✅ Export System (5 endpoints)');
-  console.log('     ✅ Search & Filter (2 endpoints)');
-  console.log('     ✅ Notifications (2 endpoints)');
-  console.log('     ✅ User Preferences (2 endpoints)');
+  console.log('  📊 COMPLETE FEATURE SET:');
+  console.log('');
+  console.log('  ✅ WEEK 1 (Days 1-7): Core Features');
+  console.log('     • Authentication & Authorization');
+  console.log('     • Transaction Management (CRUD)');
+  console.log('     • Category System');
+  console.log('     • Budget Tracking');
+  console.log('     • Financial Goals');
+  console.log('');
+  console.log('  ✅ WEEK 2 (Days 8-14): Analytics & Advanced');
+  console.log('     • Advanced Analytics Dashboard');
+  console.log('     • Data Export (CSV, PDF, JSON)');
+  console.log('     • Global Search & Filtering');
+  console.log('     • Smart Notifications');
+  console.log('     • User Preferences');
+  console.log('');
+  console.log('  ✅ WEEK 3 (Days 15-21): AI & Automation');
+  console.log('     • AI-Powered Financial Advisor');
+  console.log('     • Spending Analysis with AI');
+  console.log('     • Budget Recommendations');
+  console.log('     • Expense Predictions');
+  console.log('     • Recurring Transactions');
+  console.log('     • Custom Reports & Scheduling');
+  console.log('');
   console.log('='.repeat(70));
-  console.log('  🎯 Total Endpoints: 50+');
+  console.log('  🎯 Total API Endpoints: 70+');
+  console.log('  🎉 3 WEEKS COMPLETE - PRODUCTION READY!');
   console.log('='.repeat(70) + '\n');
   console.log('  📝 Press Ctrl+C to stop the server\n');
 });
@@ -262,7 +197,6 @@ const server = app.listen(PORT, () => {
 process.on('unhandledRejection', (err) => {
   console.error('❌ Unhandled Rejection:', err.message);
   console.error('💡 Stack:', err.stack);
-  // Close server & exit process
   server.close(() => {
     console.log('🛑 Server closed due to unhandled rejection');
     process.exit(1);
