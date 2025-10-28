@@ -99,6 +99,13 @@ app.get('/api', (req, res) => {
         delete: 'DELETE /api/transactions/:id',
         summary: 'GET /api/transactions/summary'
       },
+      categories: {
+        getAll: 'GET /api/categories',
+        getOne: 'GET /api/categories/:id',
+        create: 'POST /api/categories',
+        update: 'PUT /api/categories/:id',
+        delete: 'DELETE /api/categories/:id'
+      },
       budgets: {
         getAll: 'GET /api/budgets',
         getOne: 'GET /api/budgets/:id',
@@ -113,17 +120,41 @@ app.get('/api', (req, res) => {
         create: 'POST /api/goals',
         update: 'PUT /api/goals/:id',
         delete: 'DELETE /api/goals/:id',
-        contribute: 'POST /api/goals/:id/contribute'
+        contribute: 'POST /api/goals/:id/contribute',
+        withdraw: 'POST /api/goals/:id/withdraw',
+        stats: 'GET /api/goals/stats'
       },
       analytics: {
         dashboard: 'GET /api/analytics/dashboard',
+        overview: 'GET /api/analytics/overview',
+        categories: 'GET /api/analytics/categories',
         trends: 'GET /api/analytics/trends',
-        categoryBreakdown: 'GET /api/analytics/category-breakdown'
+        monthly: 'GET /api/analytics/monthly',
+        budgetPerformance: 'GET /api/analytics/budget-performance',
+        goalProgress: 'GET /api/analytics/goal-progress',
+        insights: 'GET /api/analytics/insights',
+        comparison: 'GET /api/analytics/comparison',
+        topCategories: 'GET /api/analytics/top-categories',
+        report: 'GET /api/analytics/report'
       },
-      ai: {
-        chat: 'POST /api/ai/chat',
-        analyzeSpending: 'GET /api/ai/analyze-spending',
-        budgetRecommendations: 'POST /api/ai/budget-recommendations'
+      export: {
+        transactionsCSV: 'GET /api/export/transactions/csv',
+        budgetsCSV: 'GET /api/export/budgets/csv',
+        goalsCSV: 'GET /api/export/goals/csv',
+        reportPDF: 'GET /api/export/report/pdf',
+        allJSON: 'GET /api/export/all/json'
+      },
+      search: {
+        global: 'GET /api/search',
+        advancedTransactions: 'GET /api/search/transactions/advanced'
+      },
+      notifications: {
+        getAll: 'GET /api/notifications',
+        markRead: 'POST /api/notifications/read'
+      },
+      preferences: {
+        get: 'GET /api/preferences',
+        update: 'PUT /api/preferences'
       }
     }
   });
@@ -141,9 +172,29 @@ app.use('/api/transactions', require('./routes/transactions'));
 
 // Category routes
 app.use('/api/categories', require('./routes/categories'));
-// app.use('/api/budgets', require('./routes/budgets'));
-// app.use('/api/goals', require('./routes/goals'));
-// app.use('/api/analytics', require('./routes/analytics'));
+
+// Budget routes
+app.use('/api/budgets', require('./routes/budgets'));
+
+// Goal routes
+app.use('/api/goals', require('./routes/goals'));
+
+// Analytics routes (Day 9)
+app.use('/api/analytics', require('./routes/analytics'));
+
+// Export routes (Day 10)
+app.use('/api/export', require('./routes/export'));
+
+// Search routes (Day 11-12)
+app.use('/api/search', require('./routes/search'));
+
+// Notification routes (Day 11-12)
+app.use('/api/notifications', require('./routes/notifications'));
+
+// Preferences routes (Day 11-12)
+app.use('/api/preferences', require('./routes/preferences'));
+
+// AI routes (coming soon)
 // app.use('/api/ai', require('./routes/ai'));
 
 // ==============================================
@@ -159,7 +210,16 @@ app.use((req, res) => {
       'GET /health',
       'GET /api',
       'POST /api/auth/register',
-      'POST /api/auth/login'
+      'POST /api/auth/login',
+      'GET /api/transactions',
+      'GET /api/categories',
+      'GET /api/budgets',
+      'GET /api/goals',
+      'GET /api/analytics/dashboard',
+      'GET /api/export/transactions/csv',
+      'GET /api/search',
+      'GET /api/notifications',
+      'GET /api/preferences'
     ]
   });
 });
@@ -185,6 +245,15 @@ const server = app.listen(PORT, () => {
   console.log(`  🗄️  Database: ${process.env.MONGODB_URI ? 'Configured' : 'Not configured'}`);
   console.log(`  🔐 JWT: ${process.env.JWT_SECRET ? 'Configured' : 'Not configured'}`);
   console.log(`  🤖 Gemini AI: ${process.env.GEMINI_API_KEY ? 'Configured' : 'Not configured'}`);
+  console.log('='.repeat(70));
+  console.log('  📊 NEW FEATURES (Days 9-12):');
+  console.log('     ✅ Analytics System (11 endpoints)');
+  console.log('     ✅ Export System (5 endpoints)');
+  console.log('     ✅ Search & Filter (2 endpoints)');
+  console.log('     ✅ Notifications (2 endpoints)');
+  console.log('     ✅ User Preferences (2 endpoints)');
+  console.log('='.repeat(70));
+  console.log('  🎯 Total Endpoints: 50+');
   console.log('='.repeat(70) + '\n');
   console.log('  📝 Press Ctrl+C to stop the server\n');
 });
