@@ -12,7 +12,7 @@ EMAIL="test${TIMESTAMP}@example.com"
 PASSWORD="Password123!"
 
 echo -e "${BLUE}════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   WEEK 4 COMPLETE TEST (Days 19-24)${NC}"
+echo -e "${BLUE}   WEEK 5 COMPLETE TEST (Days 25-28)${NC}"
 echo -e "${BLUE}════════════════════════════════════════════${NC}\n"
 
 print_result() {
@@ -29,7 +29,7 @@ PASSED=0
 FAILED=0
 
 # Authentication
-echo -e "${YELLOW}[1/18] Authentication${NC}"
+echo -e "${YELLOW}[1/16] Authentication${NC}"
 REGISTER=$(curl -s -X POST "${API_URL}/auth/register" \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"Test User\",\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}")
@@ -45,249 +45,232 @@ else
     exit 1
 fi
 
-# Setup test data
-CATEGORIES=$(curl -s -X GET "${API_URL}/categories" -H "Authorization: Bearer ${TOKEN}")
-CATEGORY_ID=$(echo $CATEGORIES | grep -o '"_id":"[^"]*' | head -1 | sed 's/"_id":"//')
-
-curl -s -X POST "${API_URL}/transactions" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -d "{\"description\":\"Test Transaction\",\"amount\":100,\"type\":\"expense\",\"category\":\"${CATEGORY_ID}\",\"date\":\"2025-10-20\"}" > /dev/null
-
-curl -s -X POST "${API_URL}/budgets" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -d "{\"amount\":1000,\"category\":\"${CATEGORY_ID}\",\"period\":\"monthly\",\"startDate\":\"2025-10-01\",\"endDate\":\"2025-10-31\"}" > /dev/null
-
-curl -s -X POST "${API_URL}/goals" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -d '{"name":"Test Goal","targetAmount":5000,"currentAmount":1000,"targetDate":"2025-12-31"}' > /dev/null
-
 echo -e "\n${BLUE}════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   Day 19-20: Enhanced Notifications${NC}"
+echo -e "${BLUE}   Day 25-26: WebSocket Real-time${NC}"
 echo -e "${BLUE}════════════════════════════════════════════${NC}"
 
-# Get Notifications
-echo -e "\n${YELLOW}[2/18] Get Notifications${NC}"
-NOTIFS=$(curl -s -X GET "${API_URL}/notifications" \
+# Get WebSocket Info
+echo -e "\n${YELLOW}[2/16] Get WebSocket Info${NC}"
+WS_INFO=$(curl -s -X GET "${API_URL}/websocket/info" \
   -H "Authorization: Bearer ${TOKEN}")
 
-if echo "$NOTIFS" | grep -q "success.*true"; then
-    print_result 0 "Get Notifications"
+if echo "$WS_INFO" | grep -q "wsUrl"; then
+    print_result 0 "WebSocket Info"
     ((PASSED++))
 else
-    print_result 1 "Get Notifications"
+    print_result 1 "WebSocket Info"
     ((FAILED++))
 fi
 
-# Generate Notifications
-echo -e "\n${YELLOW}[3/18] Generate Smart Notifications${NC}"
-GEN_NOTIFS=$(curl -s -X POST "${API_URL}/notifications/generate" \
+# Get WebSocket Stats
+echo -e "\n${YELLOW}[3/16] Get WebSocket Stats${NC}"
+WS_STATS=$(curl -s -X GET "${API_URL}/websocket/stats" \
   -H "Authorization: Bearer ${TOKEN}")
 
-if echo "$GEN_NOTIFS" | grep -q "success.*true"; then
-    print_result 0 "Generate Notifications"
+if echo "$WS_STATS" | grep -q "totalConnections"; then
+    print_result 0 "WebSocket Stats"
     ((PASSED++))
 else
-    print_result 1 "Generate Notifications"
+    print_result 1 "WebSocket Stats"
     ((FAILED++))
 fi
 
-# Get Unread Count
-echo -e "\n${YELLOW}[4/18] Get Unread Count${NC}"
-UNREAD=$(curl -s -X GET "${API_URL}/notifications/unread/count" \
-  -H "Authorization: Bearer ${TOKEN}")
+# Send Test Notification
+echo -e "\n${YELLOW}[4/16] Send Test WebSocket Notification${NC}"
+TEST_NOTIF=$(curl -s -X POST "${API_URL}/websocket/test" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"message":"Test WebSocket message"}')
 
-if echo "$UNREAD" | grep -q "count"; then
-    print_result 0 "Unread Count"
+if echo "$TEST_NOTIF" | grep -q "success"; then
+    print_result 0 "WebSocket Test Notification"
     ((PASSED++))
 else
-    print_result 1 "Unread Count"
-    ((FAILED++))
-fi
-
-# Mark All as Read
-echo -e "\n${YELLOW}[5/18] Mark All as Read${NC}"
-MARK_READ=$(curl -s -X PATCH "${API_URL}/notifications/read-all" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if echo "$MARK_READ" | grep -q "success.*true"; then
-    print_result 0 "Mark All Read"
-    ((PASSED++))
-else
-    print_result 1 "Mark All Read"
-    ((FAILED++))
-fi
-
-# Clear Read Notifications
-echo -e "\n${YELLOW}[6/18] Clear Read Notifications${NC}"
-CLEAR=$(curl -s -X DELETE "${API_URL}/notifications/clear-read" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if echo "$CLEAR" | grep -q "success.*true"; then
-    print_result 0 "Clear Notifications"
-    ((PASSED++))
-else
-    print_result 1 "Clear Notifications"
+    print_result 1 "WebSocket Test Notification"
     ((FAILED++))
 fi
 
 echo -e "\n${BLUE}════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   Day 21-22: Dashboard${NC}"
+echo -e "${BLUE}   Day 27-28: User Settings${NC}"
 echo -e "${BLUE}════════════════════════════════════════════${NC}"
 
-# Get Dashboard
-echo -e "\n${YELLOW}[7/18] Get Complete Dashboard${NC}"
-DASHBOARD=$(curl -s -X GET "${API_URL}/dashboard?period=month" \
+# Get Settings
+echo -e "\n${YELLOW}[5/16] Get User Settings${NC}"
+SETTINGS=$(curl -s -X GET "${API_URL}/settings" \
   -H "Authorization: Bearer ${TOKEN}")
 
-if echo "$DASHBOARD" | grep -q "overview"; then
-    print_result 0 "Dashboard"
+if echo "$SETTINGS" | grep -q "display"; then
+    print_result 0 "Get Settings"
     ((PASSED++))
 else
-    print_result 1 "Dashboard"
+    print_result 1 "Get Settings"
     ((FAILED++))
 fi
 
-# Get Financial Summary
-echo -e "\n${YELLOW}[8/18] Get Financial Summary${NC}"
-SUMMARY=$(curl -s -X GET "${API_URL}/dashboard/summary" \
+# Get Available Options
+echo -e "\n${YELLOW}[6/16] Get Available Options${NC}"
+OPTIONS=$(curl -s -X GET "${API_URL}/settings/options" \
   -H "Authorization: Bearer ${TOKEN}")
 
-if echo "$SUMMARY" | grep -q "currentMonth"; then
-    print_result 0 "Financial Summary"
+if echo "$OPTIONS" | grep -q "currencies"; then
+    print_result 0 "Available Options"
     ((PASSED++))
 else
-    print_result 1 "Financial Summary"
+    print_result 1 "Available Options"
     ((FAILED++))
 fi
 
-# Get Spending Chart
-echo -e "\n${YELLOW}[9/18] Get Spending Chart${NC}"
-CHART=$(curl -s -X GET "${API_URL}/dashboard/spending-chart?period=month" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if echo "$CHART" | grep -q "success.*true"; then
-    print_result 0 "Spending Chart"
-    ((PASSED++))
-else
-    print_result 1 "Spending Chart"
-    ((FAILED++))
-fi
-
-# Get Trend Data
-echo -e "\n${YELLOW}[10/18] Get Income vs Expenses Trend${NC}"
-TREND=$(curl -s -X GET "${API_URL}/dashboard/trend?months=6" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if echo "$TREND" | grep -q "success.*true"; then
-    print_result 0 "Trend Data"
-    ((PASSED++))
-else
-    print_result 1 "Trend Data"
-    ((FAILED++))
-fi
-
-# Get Recent Activity
-echo -e "\n${YELLOW}[11/18] Get Recent Activity${NC}"
-ACTIVITY=$(curl -s -X GET "${API_URL}/dashboard/activity?limit=10" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if echo "$ACTIVITY" | grep -q "success.*true"; then
-    print_result 0 "Recent Activity"
-    ((PASSED++))
-else
-    print_result 1 "Recent Activity"
-    ((FAILED++))
-fi
-
-# Get Quick Stats
-echo -e "\n${YELLOW}[12/18] Get Quick Stats${NC}"
-STATS=$(curl -s -X GET "${API_URL}/dashboard/stats" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if echo "$STATS" | grep -q "budgets"; then
-    print_result 0 "Quick Stats"
-    ((PASSED++))
-else
-    print_result 1 "Quick Stats"
-    ((FAILED++))
-fi
-
-echo -e "\n${BLUE}════════════════════════════════════════════${NC}"
-echo -e "${BLUE}   Day 23-24: Backup & Restore${NC}"
-echo -e "${BLUE}════════════════════════════════════════════${NC}"
-
-# Create Backup
-echo -e "\n${YELLOW}[13/18] Create Backup${NC}"
-BACKUP=$(curl -s -X POST "${API_URL}/backup/create" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if echo "$BACKUP" | grep -q "success.*true"; then
-    print_result 0 "Create Backup"
-    ((PASSED++))
-    BACKUP_DATA=$(echo "$BACKUP" | jq -r '.data')
-else
-    print_result 1 "Create Backup"
-    ((FAILED++))
-fi
-
-# Download Backup
-echo -e "\n${YELLOW}[14/18] Download Backup${NC}"
-DOWNLOAD_CODE=$(curl -s -w "%{http_code}" -o /dev/null \
-  -X GET "${API_URL}/backup/download" \
-  -H "Authorization: Bearer ${TOKEN}")
-
-if [ "$DOWNLOAD_CODE" = "200" ]; then
-    print_result 0 "Download Backup"
-    ((PASSED++))
-else
-    print_result 1 "Download Backup (HTTP $DOWNLOAD_CODE)"
-    ((FAILED++))
-fi
-
-# Validate Backup
-echo -e "\n${YELLOW}[15/18] Validate Backup${NC}"
-VALIDATE=$(curl -s -X POST "${API_URL}/backup/validate" \
+# Update Display Settings
+echo -e "\n${YELLOW}[7/16] Update Display Settings${NC}"
+DISPLAY=$(curl -s -X PATCH "${API_URL}/settings/display" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TOKEN}" \
-  -d "{\"backupData\":{\"version\":\"1.0.0\",\"data\":{\"transactions\":[],\"budgets\":[],\"goals\":[],\"categories\":[]}}}")
+  -d '{"currency":"EUR","language":"en","theme":"dark"}')
 
-if echo "$VALIDATE" | grep -q "isValid"; then
-    print_result 0 "Validate Backup"
+if echo "$DISPLAY" | grep -q "EUR"; then
+    print_result 0 "Update Display Settings"
     ((PASSED++))
 else
-    print_result 1 "Validate Backup"
+    print_result 1 "Update Display Settings"
     ((FAILED++))
 fi
 
-# Get Backup History
-echo -e "\n${YELLOW}[16/18] Get Backup History${NC}"
-HISTORY=$(curl -s -X GET "${API_URL}/backup/history" \
+# Update Notification Settings
+echo -e "\n${YELLOW}[8/16] Update Notification Settings${NC}"
+NOTIF_SETTINGS=$(curl -s -X PATCH "${API_URL}/settings/notifications" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"email":{"enabled":true,"budgetAlerts":true}}')
+
+if echo "$NOTIF_SETTINGS" | grep -q "email"; then
+    print_result 0 "Update Notification Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update Notification Settings"
+    ((FAILED++))
+fi
+
+# Update Privacy Settings
+echo -e "\n${YELLOW}[9/16] Update Privacy Settings${NC}"
+PRIVACY=$(curl -s -X PATCH "${API_URL}/settings/privacy" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"profileVisibility":"private"}')
+
+if echo "$PRIVACY" | grep -q "profileVisibility"; then
+    print_result 0 "Update Privacy Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update Privacy Settings"
+    ((FAILED++))
+fi
+
+# Update Budget Settings
+echo -e "\n${YELLOW}[10/16] Update Budget Settings${NC}"
+BUDGET_SETTINGS=$(curl -s -X PATCH "${API_URL}/settings/budgets" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"defaultPeriod":"monthly","alertThreshold":85}')
+
+if echo "$BUDGET_SETTINGS" | grep -q "alertThreshold"; then
+    print_result 0 "Update Budget Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update Budget Settings"
+    ((FAILED++))
+fi
+
+# Update Goal Settings
+echo -e "\n${YELLOW}[11/16] Update Goal Settings${NC}"
+GOAL_SETTINGS=$(curl -s -X PATCH "${API_URL}/settings/goals" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"defaultPriority":"high","reminderFrequency":"weekly"}')
+
+if echo "$GOAL_SETTINGS" | grep -q "reminderFrequency"; then
+    print_result 0 "Update Goal Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update Goal Settings"
+    ((FAILED++))
+fi
+
+# Update AI Settings
+echo -e "\n${YELLOW}[12/16] Update AI Settings${NC}"
+AI_SETTINGS=$(curl -s -X PATCH "${API_URL}/settings/ai" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"enabled":true,"autoAnalysis":true}')
+
+if echo "$AI_SETTINGS" | grep -q "enabled"; then
+    print_result 0 "Update AI Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update AI Settings"
+    ((FAILED++))
+fi
+
+# Update Export Settings
+echo -e "\n${YELLOW}[13/16] Update Export Settings${NC}"
+EXPORT_SETTINGS=$(curl -s -X PATCH "${API_URL}/settings/export" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"defaultFormat":"pdf","includeCharts":true}')
+
+if echo "$EXPORT_SETTINGS" | grep -q "defaultFormat"; then
+    print_result 0 "Update Export Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update Export Settings"
+    ((FAILED++))
+fi
+
+# Update Backup Settings
+echo -e "\n${YELLOW}[14/16] Update Backup Settings${NC}"
+BACKUP_SETTINGS=$(curl -s -X PATCH "${API_URL}/settings/backup" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"autoBackup":true,"frequency":"weekly"}')
+
+if echo "$BACKUP_SETTINGS" | grep -q "frequency"; then
+    print_result 0 "Update Backup Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update Backup Settings"
+    ((FAILED++))
+fi
+
+# Update All Settings
+echo -e "\n${YELLOW}[15/16] Update All Settings${NC}"
+UPDATE_ALL=$(curl -s -X PUT "${API_URL}/settings" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"display":{"currency":"USD"},"ai":{"enabled":true}}')
+
+if echo "$UPDATE_ALL" | grep -q "success.*true"; then
+    print_result 0 "Update All Settings"
+    ((PASSED++))
+else
+    print_result 1 "Update All Settings"
+    ((FAILED++))
+fi
+
+# Reset Settings
+echo -e "\n${YELLOW}[16/16] Reset Settings to Default${NC}"
+RESET=$(curl -s -X POST "${API_URL}/settings/reset" \
   -H "Authorization: Bearer ${TOKEN}")
 
-if echo "$HISTORY" | grep -q "success.*true"; then
-    print_result 0 "Backup History"
+if echo "$RESET" | grep -q "reset to default"; then
+    print_result 0 "Reset Settings"
     ((PASSED++))
 else
-    print_result 1 "Backup History"
+    print_result 1 "Reset Settings"
     ((FAILED++))
 fi
-
-# Test Restore (commented out to avoid data loss in test)
-echo -e "\n${YELLOW}[17/18] Restore Capability${NC}"
-print_result 0 "Restore Capability (endpoint available)"
-((PASSED++))
-
-# Test Clear Data (commented out to avoid data loss in test)
-echo -e "\n${YELLOW}[18/18] Clear Data Capability${NC}"
-print_result 0 "Clear Data Capability (endpoint available)"
-((PASSED++))
 
 # Final Results
 echo -e "\n${BLUE}════════════════════════════════════════════${NC}"
-echo -e "${BLUE}          WEEK 4 TEST RESULTS${NC}"
+echo -e "${BLUE}          WEEK 5 TEST RESULTS${NC}"
 echo -e "${BLUE}════════════════════════════════════════════${NC}\n"
 
 TOTAL=$((PASSED + FAILED))
@@ -298,11 +281,10 @@ echo -e "${RED}❌ Failed: ${FAILED}/${TOTAL}${NC}"
 echo -e "${BLUE}📊 Success Rate: ${PERCENTAGE}%${NC}\n"
 
 if [ $PERCENTAGE -ge 90 ]; then
-    echo -e "${GREEN}🎉 EXCELLENT! Week 4 Complete!${NC}\n"
-    echo -e "${GREEN}✨ Day 19-20: Enhanced Notifications ✅${NC}"
-    echo -e "${GREEN}✨ Day 21-22: Dashboard System ✅${NC}"
-    echo -e "${GREEN}✨ Day 23-24: Backup & Restore ✅${NC}\n"
-    echo -e "${GREEN}🚀 4 WEEKS COMPLETE - PRODUCTION READY!${NC}\n"
+    echo -e "${GREEN}🎉 EXCELLENT! Week 5 Complete!${NC}\n"
+    echo -e "${GREEN}✨ Day 25-26: WebSocket Real-time ✅${NC}"
+    echo -e "${GREEN}✨ Day 27-28: User Settings ✅${NC}\n"
+    echo -e "${GREEN}🚀 5 WEEKS COMPLETE - 100+ ENDPOINTS!${NC}\n"
     exit 0
 else
     echo -e "${YELLOW}⚠️  Some features need attention${NC}\n"

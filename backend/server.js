@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -14,6 +15,9 @@ const connectDB = require('./config/db');
 // Import category seeder
 const { seedDefaultCategories } = require('./utils/seedCategories');
 
+// Import WebSocket service
+const websocketService = require('./services/websocketService');
+
 // Import error handler
 const { errorHandler } = require('./middleware/errorHandler');
 
@@ -24,6 +28,12 @@ connectDB().then(() => {
 
 // Initialize Express app
 const app = express();
+
+// Create HTTP server for WebSocket
+const server = http.createServer(app);
+
+// Initialize WebSocket
+websocketService.initialize(server);
 
 // Trust proxy
 app.set('trust proxy', 1);
@@ -69,6 +79,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     database: 'Connected',
+    websocket: `${websocketService.getConnectedUsersCount()} active connections`,
     aiEnabled: !!process.env.GEMINI_API_KEY
   });
 });
@@ -76,16 +87,21 @@ app.get('/health', (req, res) => {
 app.get('/api', (req, res) => {
   res.json({
     success: true,
-    message: '🚀 Finance Tracker AI - COMPLETE API',
-    version: '2.0.0',
+    message: '🚀 Finance Tracker AI - COMPLETE PRODUCTION API',
+    version: '2.5.0',
     status: 'production-ready',
-    totalEndpoints: '85+',
-    weeks: [
-      '✅ Week 1: Core Features',
-      '✅ Week 2: Analytics & Advanced',
-      '✅ Week 3: AI & Automation',
-      '✅ Week 4: Dashboard & System'
-    ]
+    totalEndpoints: '100+',
+    features: {
+      weeks: [
+        '✅ Week 1: Core Features',
+        '✅ Week 2: Analytics & Advanced',
+        '✅ Week 3: AI & Automation',
+        '✅ Week 4: Dashboard & System',
+        '✅ Week 5: Real-time & Settings'
+      ],
+      realtime: 'WebSocket support enabled',
+      websocket: `${websocketService.getConnectedUsersCount()} active connections`
+    }
   });
 });
 
@@ -116,6 +132,10 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/backup', require('./routes/backup'));
 
+// Week 5: Real-time & Settings (Days 29-35)
+app.use('/api/websocket', require('./routes/websocket'));
+app.use('/api/settings', require('./routes/settings'));
+
 // ==============================================
 // ERROR HANDLING
 // ==============================================
@@ -134,17 +154,19 @@ app.use(errorHandler);
 // ==============================================
 
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  console.log('\n' + '='.repeat(70));
-  console.log('  💰 FINANCE TRACKER AI - COMPLETE PRODUCTION API');
-  console.log('='.repeat(70));
+server.listen(PORT, () => {
+  console.log('\n' + '='.repeat(75));
+  console.log('  💰 FINANCE TRACKER AI - COMPLETE PRODUCTION API v2.5');
+  console.log('='.repeat(75));
   console.log(`  ✅ Status: Running`);
   console.log(`  🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`  🚀 Server: http://localhost:${PORT}`);
-  console.log(`  🔥 API: http://localhost:${PORT}/api`);
-  console.log(`  💚 Health: http://localhost:${PORT}/health`);
-  console.log('='.repeat(70));
-  console.log('  📊 4-WEEK COMPLETE SYSTEM:');
+  console.log(`  🚀 HTTP Server: http://localhost:${PORT}`);
+  console.log(`  🔥 API Base: http://localhost:${PORT}/api`);
+  console.log(`  💚 Health Check: http://localhost:${PORT}/health`);
+  console.log(`  🔌 WebSocket: ws://localhost:${PORT}/ws`);
+  console.log(`  📡 Active WS Connections: ${websocketService.getConnectedUsersCount()}`);
+  console.log('='.repeat(75));
+  console.log('  📊 5-WEEK COMPLETE SYSTEM:');
   console.log('');
   console.log('  ✅ WEEK 1: Core Features');
   console.log('     • Auth, Transactions, Budgets, Goals');
@@ -158,29 +180,40 @@ const server = app.listen(PORT, () => {
   console.log('  ✅ WEEK 4: Dashboard & System');
   console.log('     • Smart Notifications, Dashboard, Backup/Restore');
   console.log('');
-  console.log('='.repeat(70));
-  console.log('  🎯 Total Endpoints: 85+');
-  console.log('  🎉 PRODUCTION READY - 4 WEEKS COMPLETE!');
-  console.log('='.repeat(70) + '\n');
+  console.log('  ✅ WEEK 5: Real-time & Settings');
+  console.log('     • WebSocket Real-time Updates');
+  console.log('     • Comprehensive User Settings');
+  console.log('');
+  console.log('='.repeat(75));
+  console.log('  🎯 Total Endpoints: 100+');
+  console.log('  🔌 WebSocket: Real-time updates enabled');
+  console.log('  🤖 AI: Powered by Gemini');
+  console.log('  🎉 PRODUCTION READY - 5 WEEKS COMPLETE!');
+  console.log('='.repeat(75) + '\n');
+  console.log('  📝 Press Ctrl+C to stop the server\n');
 });
 
 // Handle errors
 process.on('unhandledRejection', (err) => {
   console.error('❌ Unhandled Rejection:', err.message);
+  websocketService.closeAll();
   server.close(() => process.exit(1));
 });
 
 process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err.message);
+  websocketService.closeAll();
   process.exit(1);
 });
 
 process.on('SIGTERM', () => {
   console.log('\n👋 Shutting down gracefully...');
+  websocketService.closeAll();
   server.close(() => process.exit(0));
 });
 
 process.on('SIGINT', () => {
   console.log('\n👋 Shutting down gracefully...');
+  websocketService.closeAll();
   server.close(() => process.exit(0));
 });
