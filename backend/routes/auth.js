@@ -1,31 +1,19 @@
 const express = require('express');
 const router = express.Router();
-
-// Import controllers
-const {
-  register,
-  login,
-  getMe,
-  updateProfile,
-  changePassword,
-  logout
-} = require('../controllers/authController');
-
-// Import middleware
+const authController = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
-const {
-  registerValidation,
-  loginValidation
-} = require('../middleware/validator');
 
-// Public routes
-router.post('/register', registerValidation, register);
-router.post('/login', loginValidation, login);
+// NOTE: Rate limiting removed for development
+// In production, add back rate limiters using express-rate-limit
 
-// Protected routes (require authentication)
-router.get('/me', protect, getMe);
-router.put('/profile', protect, updateProfile);
-router.put('/password', protect, changePassword);
-router.post('/logout', protect, logout);
+// Public Routes
+router.post('/register', authController.register);
+router.post('/login', authController.login);
+
+// Protected Routes
+router.get('/me', protect, authController.getMe);
+router.put('/profile', protect, authController.updateProfile);
+router.put('/password', protect, authController.changePassword);
+router.post('/logout', protect, authController.logout);
 
 module.exports = router;

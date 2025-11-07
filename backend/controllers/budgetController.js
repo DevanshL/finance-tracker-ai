@@ -1,45 +1,91 @@
 const Budget = require('../models/Budget');
 const Transaction = require('../models/Transaction');
-const { asyncHandler, AppError } = require('../middleware/errorHandler');
-const { HTTP_STATUS, SUCCESS_MESSAGES } = require('../config/constants');
-const { getPagination, getPaginationInfo } = require('../utils/helpers');
 
-/**
- * @desc    Get all budgets for logged in user
- * @route   GET /api/budgets
- * @access  Private
- */
-const getBudgets = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, isActive, period, status } = req.query;
+// @desc    Get all budgets
+// @route   GET /api/budgets
+// @access  Private
+exports.getBudgets = async (req, res, next) => {
+  try {
+    const { status, period } = req.query;
 
-  const query = { userId: req.user._id };
+    const filter = { user: req.user._id };
 
-  if (isActive !== undefined) {
-    query.isActive = isActive === 'true';
+    if (status) filter.status = status;
+    if (period) filter.period = period;
+
+    const budgets = await Budget.find(filter)
+      .populate('category', 'name icon color')
+      .sort({ createdAt: -1 });
+
+    // Calculate spent amount for each budget
+    for (let budget of budgets) {
+      const spent = await Transaction.aggregate([
+        {
+          $match: {
+            user: req.user._id,
+            category: budget.category._id,
+            type: 'expense',
+            date: {
+              $gte: new Date(budget.startDate),
+              $lte: new Date(budget.endDate)
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$amount' }
+          }
+        }
+      ]);
+
+      budget.spent = spent.length > 0 ? spent[0].total : 0;
+      budget.remaining = budget.amount - budget.spent;
+      await budget.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      count: budgets.length,
+      data: budgets
+    });
+  } catch (error) {
+    next(error);
   }
+};
 
-  if (period) {
-    query.period = period;
-  }
+// @desc    Get single budget
+// @route   GET /api/budgets/:id
+// @access  Private
+exports.getBudget = async (req, res, next) => {
+  try {
+    const budget = await Budget.findById(req.params.id)
+      .populate('category', 'name icon color');
 
-  const { skip, limit: limitNum } = getPagination(page, limit);
+    if (!budget) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget not found'
+      });
+    }
 
-  let budgets = await Budget.find(query)
-    .sort({ startDate: -1 })
-    .skip(skip)
-    .limit(limitNum);
+    if (budget.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this budget'
+      });
+    }
 
-  // Calculate current spending for each budget
-  for (let budget of budgets) {
+    // Calculate spent amount
     const spent = await Transaction.aggregate([
       {
         $match: {
-          userId: budget.userId,
+          user: req.user._id,
+          category: budget.category._id,
           type: 'expense',
-          category: budget.category,
           date: {
-            $gte: budget.startDate,
-            $lte: budget.endDate
+            $gte: new Date(budget.startDate),
+            $lte: new Date(budget.endDate)
           }
         }
       },
@@ -52,311 +98,122 @@ const getBudgets = asyncHandler(async (req, res) => {
     ]);
 
     budget.spent = spent.length > 0 ? spent[0].total : 0;
+    budget.remaining = budget.amount - budget.spent;
     await budget.save();
+
+    res.status(200).json({
+      success: true,
+      data: budget
+    });
+  } catch (error) {
+    next(error);
   }
+};
 
-  // Filter by status if requested
-  if (status) {
-    budgets = budgets.filter(b => b.status === status);
-  }
+// @desc    Create new budget
+// @route   POST /api/budgets
+// @access  Private
+exports.createBudget = async (req, res, next) => {
+  try {
+    req.body.user = req.user._id;
 
-  const total = await Budget.countDocuments(query);
-  const pagination = getPaginationInfo(total, parseInt(page), limitNum);
+    // Check if budget already exists for this category and period
+    const existingBudget = await Budget.findOne({
+      user: req.user._id,
+      category: req.body.category,
+      startDate: { $lte: new Date(req.body.endDate) },
+      endDate: { $gte: new Date(req.body.startDate) },
+      status: 'active'
+    });
 
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    count: budgets.length,
-    pagination,
-    data: { budgets }
-  });
-});
-
-/**
- * @desc    Get single budget
- * @route   GET /api/budgets/:id
- * @access  Private
- */
-const getBudget = asyncHandler(async (req, res) => {
-  const budget = await Budget.findOne({
-    _id: req.params.id,
-    userId: req.user._id
-  });
-
-  if (!budget) {
-    throw new AppError('Budget not found', HTTP_STATUS.NOT_FOUND);
-  }
-
-  // Calculate current spending
-  const spent = await Transaction.aggregate([
-    {
-      $match: {
-        userId: budget.userId,
-        type: 'expense',
-        category: budget.category,
-        date: {
-          $gte: budget.startDate,
-          $lte: budget.endDate
-        }
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' }
-      }
+    if (existingBudget) {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget already exists for this category in this period'
+      });
     }
-  ]);
 
-  budget.spent = spent.length > 0 ? spent[0].total : 0;
-  await budget.save();
+    const budget = await Budget.create(req.body);
+    await budget.populate('category', 'name icon color');
 
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    data: { budget }
-  });
-});
+    res.status(201).json({
+      success: true,
+      message: 'Budget created successfully',
+      data: budget
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-/**
- * @desc    Create new budget
- * @route   POST /api/budgets
- * @access  Private
- */
-const createBudget = asyncHandler(async (req, res) => {
-  const {
-    name,
-    category,
-    amount,
-    period,
-    startDate,
-    endDate,
-    alertThreshold,
-    notes
-  } = req.body;
+// @desc    Update budget
+// @route   PUT /api/budgets/:id
+// @access  Private
+exports.updateBudget = async (req, res, next) => {
+  try {
+    let budget = await Budget.findById(req.params.id);
 
-  // Check for overlapping budgets
-  const overlapping = await Budget.findOne({
-    userId: req.user._id,
-    category,
-    isActive: true,
-    $or: [
+    if (!budget) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget not found'
+      });
+    }
+
+    if (budget.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update this budget'
+      });
+    }
+
+    budget = await Budget.findByIdAndUpdate(
+      req.params.id,
+      req.body,
       {
-        startDate: { $lte: new Date(endDate) },
-        endDate: { $gte: new Date(startDate) }
+        new: true,
+        runValidators: true
       }
-    ]
-  });
+    ).populate('category', 'name icon color');
 
-  if (overlapping) {
-    throw new AppError(
-      `An active budget for ${category} already exists in this period`,
-      HTTP_STATUS.CONFLICT
-    );
+    res.status(200).json({
+      success: true,
+      message: 'Budget updated successfully',
+      data: budget
+    });
+  } catch (error) {
+    next(error);
   }
+};
 
-  const budget = await Budget.create({
-    userId: req.user._id,
-    name,
-    category,
-    amount,
-    period,
-    startDate,
-    endDate,
-    alertThreshold: alertThreshold || 80,
-    notes
-  });
+// @desc    Delete budget
+// @route   DELETE /api/budgets/:id
+// @access  Private
+exports.deleteBudget = async (req, res, next) => {
+  try {
+    const budget = await Budget.findById(req.params.id);
 
-  res.status(HTTP_STATUS.CREATED).json({
-    success: true,
-    message: SUCCESS_MESSAGES.CREATED,
-    data: { budget }
-  });
-});
-
-/**
- * @desc    Update budget
- * @route   PUT /api/budgets/:id
- * @access  Private
- */
-const updateBudget = asyncHandler(async (req, res) => {
-  let budget = await Budget.findOne({
-    _id: req.params.id,
-    userId: req.user._id
-  });
-
-  if (!budget) {
-    throw new AppError('Budget not found', HTTP_STATUS.NOT_FOUND);
-  }
-
-  const {
-    name,
-    amount,
-    period,
-    startDate,
-    endDate,
-    alertThreshold,
-    isActive,
-    notes
-  } = req.body;
-
-  if (name) budget.name = name;
-  if (amount) budget.amount = amount;
-  if (period) budget.period = period;
-  if (startDate) budget.startDate = startDate;
-  if (endDate) budget.endDate = endDate;
-  if (alertThreshold !== undefined) budget.alertThreshold = alertThreshold;
-  if (isActive !== undefined) budget.isActive = isActive;
-  if (notes !== undefined) budget.notes = notes;
-
-  await budget.save();
-
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    message: SUCCESS_MESSAGES.UPDATED,
-    data: { budget }
-  });
-});
-
-/**
- * @desc    Delete budget
- * @route   DELETE /api/budgets/:id
- * @access  Private
- */
-const deleteBudget = asyncHandler(async (req, res) => {
-  const budget = await Budget.findOne({
-    _id: req.params.id,
-    userId: req.user._id
-  });
-
-  if (!budget) {
-    throw new AppError('Budget not found', HTTP_STATUS.NOT_FOUND);
-  }
-
-  await budget.deleteOne();
-
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    message: SUCCESS_MESSAGES.DELETED,
-    data: null
-  });
-});
-
-/**
- * @desc    Get budget alerts
- * @route   GET /api/budgets/alerts
- * @access  Private
- */
-const getBudgetAlerts = asyncHandler(async (req, res) => {
-  const budgets = await Budget.getBudgetAlerts(req.user._id);
-
-  const alerts = budgets.map(budget => ({
-    budgetId: budget._id,
-    name: budget.name,
-    category: budget.category,
-    amount: budget.amount,
-    spent: budget.spent,
-    remaining: budget.remaining,
-    percentageUsed: budget.percentageUsed,
-    status: budget.status,
-    message: budget.isExceeded()
-      ? `Budget exceeded! You've spent $${budget.spent} of $${budget.amount}`
-      : `Warning: You've used ${budget.percentageUsed}% of your ${budget.name} budget`
-  }));
-
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    count: alerts.length,
-    data: { alerts }
-  });
-});
-
-/**
- * @desc    Get budget progress
- * @route   GET /api/budgets/:id/progress
- * @access  Private
- */
-const getBudgetProgress = asyncHandler(async (req, res) => {
-  const budget = await Budget.findOne({
-    _id: req.params.id,
-    userId: req.user._id
-  });
-
-  if (!budget) {
-    throw new AppError('Budget not found', HTTP_STATUS.NOT_FOUND);
-  }
-
-  // Get all transactions for this budget
-  const transactions = await Transaction.find({
-    userId: req.user._id,
-    type: 'expense',
-    category: budget.category,
-    date: {
-      $gte: budget.startDate,
-      $lte: budget.endDate
+    if (!budget) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget not found'
+      });
     }
-  }).sort({ date: -1 });
 
-  // Calculate daily spending
-  const dailySpending = {};
-  transactions.forEach(t => {
-    const date = t.date.toISOString().split('T')[0];
-    dailySpending[date] = (dailySpending[date] || 0) + t.amount;
-  });
-
-  // Calculate spending trend
-  const spent = transactions.reduce((sum, t) => sum + t.amount, 0);
-  budget.spent = spent;
-  await budget.save();
-
-  // Calculate days remaining
-  const now = new Date();
-  const daysRemaining = Math.max(
-    0,
-    Math.ceil((budget.endDate - now) / (1000 * 60 * 60 * 24))
-  );
-
-  // Calculate average daily spending
-  const totalDays = Math.ceil(
-    (budget.endDate - budget.startDate) / (1000 * 60 * 60 * 24)
-  );
-  const daysPassed = totalDays - daysRemaining;
-  const avgDailySpending = daysPassed > 0 ? spent / daysPassed : 0;
-
-  // Project end-of-period spending
-  const projectedSpending = avgDailySpending * totalDays;
-
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    data: {
-      budget: {
-        id: budget._id,
-        name: budget.name,
-        category: budget.category,
-        amount: budget.amount,
-        spent: budget.spent,
-        remaining: budget.remaining,
-        percentageUsed: budget.percentageUsed,
-        status: budget.status
-      },
-      progress: {
-        daysRemaining,
-        totalDays,
-        daysPassed,
-        avgDailySpending: Math.round(avgDailySpending * 100) / 100,
-        projectedSpending: Math.round(projectedSpending * 100) / 100,
-        projectedRemaining: Math.round((budget.amount - projectedSpending) * 100) / 100,
-        dailySpending
-      },
-      transactions: transactions.slice(0, 10) // Last 10 transactions
+    if (budget.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this budget'
+      });
     }
-  });
-});
 
-module.exports = {
-  getBudgets,
-  getBudget,
-  createBudget,
-  updateBudget,
-  deleteBudget,
-  getBudgetAlerts,
-  getBudgetProgress
+    await budget.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: 'Budget deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
 };
