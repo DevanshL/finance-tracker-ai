@@ -1,108 +1,71 @@
 const User = require('../models/User');
-const jwt = require('jsonwebtoken');
+const { generateToken } = require('../utils/generateToken');
+const { AppError, asyncHandler } = require('../middleware/errorHandler');
+const { HTTP_STATUS, ERROR_MESSAGES } = require('../config/constants');
 
-// Generate JWT Token
-const generateToken = (id) => {
-  if (!process.env.JWT_SECRET) {
-    console.error('ERROR: JWT_SECRET not defined');
-    throw new Error('JWT_SECRET is not defined in environment variables');
-  }
-  
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '30d'
-  });
-};
-
-// Validate email format
-const isValidEmail = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-// @desc    Register new user
-// @route   POST /api/auth/register
-// @access  Public
-// FIX FOR ISSUE 1: Blank Page on Sign Up
-exports.register = async (req, res, next) => {
+/**
+ * @desc Register a new user
+ * @route POST /api/auth/register
+ * @access Public
+ */
+exports.register = asyncHandler(async (req, res, next) => {
   try {
-    const { name, email, password, confirmPassword } = req.body;
+    console.log('📝 Register request:', { 
+      name: req.body.name, 
+      email: req.body.email,
+      hasPassword: !!req.body.password
+    });
 
-    // VALIDATION 1: Check all required fields exist
-    if (!name || !email || !password || !confirmPassword) {
-      console.warn('Registration: Missing required fields');
+    const { name, email, password, passwordConfirm } = req.body;
+
+    // Validation
+    if (!name || !email || !password || !passwordConfirm) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields'
+        message: 'Please provide all required fields: name, email, password, passwordConfirm'
       });
     }
 
-    // VALIDATION 2: Validate email format
-    if (!isValidEmail(email.toLowerCase())) {
-      console.warn(`Registration: Invalid email format - ${email}`);
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid email address'
-      });
-    }
-
-    // VALIDATION 3: Validate name length
-    if (name.trim().length < 2 || name.trim().length > 50) {
-      console.warn('Registration: Invalid name length');
-      return res.status(400).json({
-        success: false,
-        message: 'Name must be between 2 and 50 characters'
-      });
-    }
-
-    // VALIDATION 4: Validate password length
-    if (password.length < 6) {
-      console.warn('Registration: Password too short');
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters'
-      });
-    }
-
-    // VALIDATION 5: Check passwords match
-    if (password !== confirmPassword) {
-      console.warn('Registration: Passwords do not match');
+    if (password !== passwordConfirm) {
       return res.status(400).json({
         success: false,
         message: 'Passwords do not match'
       });
     }
 
-    // CHECK: User already exists
-    const userExists = await User.findOne({ email: email.toLowerCase() });
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check if user already exists
+    let userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) {
-      console.warn(`Registration: User already exists - ${email}`);
       return res.status(409).json({
         success: false,
-        message: 'An account with this email already exists'
+        message: 'Email already registered'
       });
     }
 
-    // CREATE: New user
-    console.log(`Creating new user: ${email}`);
+    // Create new user
     const user = await User.create({
       name: name.trim(),
-      email: email.toLowerCase(),
-      password // Will be hashed by User model pre-save hook
+      email: normalizedEmail,
+      password
     });
 
-    if (!user) {
-      console.error('Registration: Failed to create user');
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to create user account'
-      });
-    }
+    console.log('✅ User created:', user._id);
 
-    // GENERATE: JWT Token
+    // Generate token
     const token = generateToken(user._id);
 
-    // RESPONSE: Success with all required data
-    console.log(`Registration successful: ${email}`);
+    console.log('🔐 Token generated');
+
+    // Send response
     return res.status(201).json({
       success: true,
       message: 'User registered successfully',
@@ -110,86 +73,84 @@ exports.register = async (req, res, next) => {
       user: {
         id: user._id,
         name: user.name,
-        email: user.email
+        email: user.email,
+        monthlyIncome: user.monthlyIncome,
+        currency: user.currency
       }
     });
-
   } catch (error) {
-    console.error('Registration error:', error.message);
-    console.error('Error stack:', error.stack);
+    console.error('❌ Registration error:', error.message);
     
-    // Don't expose internal errors to client
+    // Handle MongoDB validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors)
+        .map(err => err.message)
+        .join(', ');
+      return res.status(400).json({
+        success: false,
+        message: `Validation error: ${messages}`
+      });
+    }
+
+    // Handle other errors
     return res.status(500).json({
       success: false,
-      message: error.message || 'Registration failed. Please try again.'
+      message: error.message || 'Registration failed'
     });
   }
-};
+});
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
-// FIX FOR ISSUE 2: Page Refresh on Wrong Credentials
-exports.login = async (req, res, next) => {
+/**
+ * @desc Login user
+ * @route POST /api/auth/login
+ * @access Public
+ */
+exports.login = asyncHandler(async (req, res, next) => {
   try {
+    console.log('🔓 Login request:', { email: req.body.email });
+
     const { email, password } = req.body;
 
-    // VALIDATION 1: Check required fields
+    // Validation
     if (!email || !password) {
-      console.warn('Login: Missing email or password');
       return res.status(400).json({
         success: false,
         message: 'Please provide email and password'
       });
     }
 
-    // VALIDATION 2: Validate email format
-    if (!isValidEmail(email.toLowerCase())) {
-      console.warn(`Login: Invalid email format - ${email}`);
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid email address'
-      });
-    }
-
-    console.log(`Login attempt: ${email}`);
-
-    // STEP 1: Find user by email
+    // Find user and check password
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-    
+
     if (!user) {
-      console.warn(`Login failed: User not found - ${email}`);
+      console.log('❌ User not found:', email);
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials' // Don't reveal if email exists
+        message: 'Invalid email or password'
       });
     }
 
-    // STEP 2: Compare password
-    let isPasswordValid = false;
-    try {
-      isPasswordValid = await user.comparePassword(password);
-    } catch (passwordError) {
-      console.error('Password comparison error:', passwordError.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Error validating credentials'
-      });
-    }
+    // Check password
+    const isPasswordValid = await user.comparePassword(password);
 
     if (!isPasswordValid) {
-      console.warn(`Login failed: Invalid password - ${email}`);
+      console.log('❌ Invalid password for user:', email);
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials' // Don't reveal which field is wrong
+        message: 'Invalid email or password'
       });
     }
 
-    // STEP 3: Generate token
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
+
+    // Generate token
     const token = generateToken(user._id);
 
-    // STEP 4: Return success response
-    console.log(`Login successful: ${email}`);
+    console.log('✅ Login successful:', user._id);
+
+    // Send response
     return res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -197,38 +158,31 @@ exports.login = async (req, res, next) => {
       user: {
         id: user._id,
         name: user.name,
-        email: user.email
+        email: user.email,
+        monthlyIncome: user.monthlyIncome,
+        currency: user.currency,
+        avatar: user.avatar
       }
     });
-
   } catch (error) {
-    console.error('Login error:', error.message);
-    console.error('Error stack:', error.stack);
-    
+    console.error('❌ Login error:', error.message);
     return res.status(500).json({
       success: false,
-      message: error.message || 'Login failed. Please try again.'
+      message: error.message || 'Login failed'
     });
   }
-};
+});
 
-// @desc    Get current logged in user
-// @route   GET /api/auth/me
-// @access  Private
-exports.getMe = async (req, res, next) => {
+/**
+ * @desc Get current logged in user
+ * @route GET /api/auth/me
+ * @access Private
+ */
+exports.getMe = asyncHandler(async (req, res, next) => {
   try {
-    if (!req.user || !req.user._id) {
-      console.warn('GetMe: No user in request');
-      return res.status(401).json({
-        success: false,
-        message: 'Unauthorized'
-      });
-    }
-
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id);
 
     if (!user) {
-      console.warn('GetMe: User not found');
       return res.status(404).json({
         success: false,
         message: 'User not found'
@@ -237,156 +191,56 @@ exports.getMe = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: {
+      user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        createdAt: user.createdAt
+        monthlyIncome: user.monthlyIncome,
+        currency: user.currency,
+        avatar: user.avatar,
+        isEmailVerified: user.isEmailVerified,
+        lastLogin: user.lastLogin
       }
     });
   } catch (error) {
-    console.error('GetMe error:', error.message);
+    console.error('❌ Get user error:', error.message);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch user data'
+      message: error.message || 'Failed to get user'
     });
   }
-};
+});
 
-// @desc    Update user profile
-// @route   PUT /api/auth/profile
-// @access  Private
-exports.updateProfile = async (req, res, next) => {
+/**
+ * @desc Update password
+ * @route PUT /api/auth/password
+ * @access Private
+ */
+exports.updatePassword = asyncHandler(async (req, res, next) => {
   try {
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({
-        success: false,
-        message: 'Unauthorized'
-      });
-    }
+    const { currentPassword, newPassword, newPasswordConfirm } = req.body;
 
-    const { name, email } = req.body;
-    const fieldsToUpdate = {};
-
-    // Validate name if provided
-    if (name) {
-      if (name.trim().length < 2 || name.trim().length > 50) {
-        return res.status(400).json({
-          success: false,
-          message: 'Name must be between 2 and 50 characters'
-        });
-      }
-      fieldsToUpdate.name = name.trim();
-    }
-
-    // Validate email if provided
-    if (email) {
-      if (!isValidEmail(email.toLowerCase())) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid email address'
-        });
-      }
-
-      // Check if email taken by another user
-      if (email.toLowerCase() !== req.user.email) {
-        const emailExists = await User.findOne({ email: email.toLowerCase() });
-        if (emailExists) {
-          return res.status(409).json({
-            success: false,
-            message: 'Email already in use'
-          });
-        }
-      }
-      fieldsToUpdate.email = email.toLowerCase();
-    }
-
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      fieldsToUpdate,
-      {
-        new: true,
-        runValidators: true
-      }
-    );
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    console.log(`Profile updated: ${user.email}`);
-    return res.status(200).json({
-      success: true,
-      message: 'Profile updated successfully',
-      data: {
-        id: user._id,
-        name: user.name,
-        email: user.email
-      }
-    });
-  } catch (error) {
-    console.error('Update profile error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to update profile'
-    });
-  }
-};
-
-// @desc    Change password
-// @route   PUT /api/auth/password
-// @access  Private
-exports.changePassword = async (req, res, next) => {
-  try {
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({
-        success: false,
-        message: 'Unauthorized'
-      });
-    }
-
-    const { currentPassword, newPassword, confirmPassword } = req.body;
-
-    // Validate all fields provided
-    if (!currentPassword || !newPassword || !confirmPassword) {
+    // Validation
+    if (!currentPassword || !newPassword || !newPasswordConfirm) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide current password and new password'
+        message: 'Please provide all required fields'
       });
     }
 
-    // Validate new password length
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'New password must be at least 6 characters'
-      });
-    }
-
-    // Check passwords match
-    if (newPassword !== confirmPassword) {
+    if (newPassword !== newPasswordConfirm) {
       return res.status(400).json({
         success: false,
         message: 'New passwords do not match'
       });
     }
 
-    // Get user with password field
-    const user = await User.findById(req.user._id).select('+password');
+    const user = await User.findById(req.user.id).select('+password');
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+    // Check current password
+    const isPasswordValid = await user.comparePassword(currentPassword);
 
-    // Verify current password
-    const isMatch = await user.comparePassword(currentPassword);
-    if (!isMatch) {
+    if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
         message: 'Current password is incorrect'
@@ -397,49 +251,27 @@ exports.changePassword = async (req, res, next) => {
     user.password = newPassword;
     await user.save();
 
-    // Generate new token
-    const token = generateToken(user._id);
-
-    console.log(`Password changed: ${user.email}`);
     return res.status(200).json({
       success: true,
-      message: 'Password changed successfully',
-      token
+      message: 'Password updated successfully'
     });
   } catch (error) {
-    console.error('Change password error:', error.message);
+    console.error('❌ Update password error:', error.message);
     return res.status(500).json({
       success: false,
-      message: 'Failed to change password'
+      message: error.message || 'Failed to update password'
     });
   }
-};
+});
 
-// @desc    Logout user
-// @route   POST /api/auth/logout
-// @access  Private
-exports.logout = async (req, res, next) => {
-  try {
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({
-        success: false,
-        message: 'Unauthorized'
-      });
-    }
-
-    // In a stateless JWT system, logout is handled client-side
-    // by removing the token from storage
-    
-    console.log(`User logged out: ${req.user._id}`);
-    return res.status(200).json({
-      success: true,
-      message: 'Logged out successfully'
-    });
-  } catch (error) {
-    console.error('Logout error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Logout failed'
-    });
-  }
-};
+/**
+ * @desc Logout user
+ * @route POST /api/auth/logout
+ * @access Private
+ */
+exports.logout = asyncHandler(async (req, res, next) => {
+  return res.status(200).json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});

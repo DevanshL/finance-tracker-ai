@@ -1,25 +1,20 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import './App.css';
+import ProtectedRoute from './components/ProtectedRoute';
 import useAuthStore from './store/authStore';
+
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
-import ProtectedRoute from './components/ProtectedRoute';
 
 console.log('✅ App.jsx loaded');
 
 function App() {
-  const { isAuthenticated, isLoading, initializeAuth } = useAuthStore();
+  const { isAuthenticated, isLoading } = useAuthStore();
 
   console.log('🔍 App Auth State:', { isAuthenticated, isLoading });
-
-  useEffect(() => {
-  console.log('🚀 App mounted - Initializing auth...');
-  initializeAuth();
-}, [initializeAuth]);
-
 
   if (isLoading) {
     return (
@@ -36,7 +31,7 @@ function App() {
   }
 
   return (
-    <>
+    <Router>
       <Toaster position="top-right" />
       <Routes>
         <Route 
@@ -78,7 +73,7 @@ function App() {
           element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} 
         />
       </Routes>
-    </>
+    </Router>
   );
 }
 

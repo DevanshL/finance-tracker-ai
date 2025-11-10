@@ -5,7 +5,11 @@ const {
   getBudget,
   createBudget,
   updateBudget,
-  deleteBudget
+  deleteBudget,
+  getBudgetByCategory,
+  getAnalytics,
+  getMonthlyAnalytics,
+  getBudgetAlerts
 } = require('../controllers/budgetController');
 const { protect } = require('../middleware/auth');
 
@@ -22,5 +26,15 @@ router.route('/:id')
   .get(getBudget)
   .put(updateBudget)
   .delete(deleteBudget);
+
+// Budget by category
+router.get('/category/:category', getBudgetByCategory);
+
+// Budget analytics
+router.get('/analytics/monthly', getMonthlyAnalytics);
+router.get('/analytics/:period', getAnalytics);
+
+// Budget alerts
+router.get('/alerts/all', getBudgetAlerts);
 
 module.exports = router;

@@ -12,7 +12,6 @@ import {
   ArrowRightIcon
 } from '@heroicons/react/24/outline';
 import useAuthStore from '../store/authStore';
-import toast from 'react-hot-toast';
 
 // Validation schema
 const loginSchema = z.object({
@@ -34,13 +33,37 @@ function Login() {
   });
 
   const onSubmit = async (data) => {
-    try {
-      await login(data);
-      navigate('/dashboard');
-    } catch (error) {
-      // Error handled by axios interceptor
+  try {
+    console.log('🔐 Login attempt:', { email: data.email });
+    
+    // Call login from Zustand store
+    const response = await login(data.email, data.password);
+    
+    console.log('📦 Login response:', response);
+    
+    // ✅ Check if login was successful
+    if (response && response.token) {
+      console.log('✅ Login successful! User:', response.user);
+      
+      // ✅ FORCE NAVIGATE - This bypasses React Router issues
+      console.log('🔄 Force navigating to dashboard...');
+      
+      // Option 1: Use window.location (MOST RELIABLE)
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 100);
+      
+      // Option 2: Or use React Router navigate (if above doesn't work)
+      // setTimeout(() => {
+      //   navigate('/dashboard', { replace: true });
+      // }, 100);
     }
-  };
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    // Error is already handled by Zustand store with toast notification
+  }
+};
+
 
   return (
     <div className="min-h-screen flex">
@@ -90,6 +113,7 @@ function Login() {
                   className={`input pl-10 ${errors.email ? 'input-error' : ''}`}
                   placeholder="you@example.com"
                   autoComplete="email"
+                  disabled={isLoading}
                 />
               </div>
               {errors.email && (
@@ -113,11 +137,13 @@ function Login() {
                   className={`input pl-10 pr-10 ${errors.password ? 'input-error' : ''}`}
                   placeholder="••••••••"
                   autoComplete="current-password"
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  disabled={isLoading}
                 >
                   {showPassword ? (
                     <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-600" />
@@ -139,6 +165,7 @@ function Login() {
                   name="remember-me"
                   type="checkbox"
                   className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  disabled={isLoading}
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                   Remember me
@@ -157,11 +184,11 @@ function Login() {
 
             {/* Submit Button */}
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: isLoading ? 1 : 1.02 }}
+              whileTap={{ scale: isLoading ? 1 : 0.98 }}
               type="submit"
               disabled={isLoading}
-              className="btn-primary w-full btn-lg group"
+              className="btn-primary w-full btn-lg group disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>
@@ -195,8 +222,8 @@ function Login() {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                className="btn-outline"
-                onClick={() => toast.success('Google login coming soon!')}
+                disabled={isLoading}
+                className="btn-outline disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24">
                   <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -208,8 +235,8 @@ function Login() {
               </button>
               <button
                 type="button"
-                className="btn-outline"
-                onClick={() => toast.success('GitHub login coming soon!')}
+                disabled={isLoading}
+                className="btn-outline disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
                   <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />

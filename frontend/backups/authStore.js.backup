@@ -15,29 +15,17 @@ export const useAuthStore = create(
       register: async (name, email, password, passwordConfirm) => {
         set({ isLoading: true, error: null });
         try {
-          console.log('📝 Calling authAPI.register with params:', { name, email });
-          
           const response = await authAPI.register(name, email, password, passwordConfirm);
           
-          console.log('📦 Register API response:', response);
-          
           if (response.success && response.data?.token) {
-            // Store in localStorage
             localStorage.setItem('token', response.data.token);
             localStorage.setItem('user', JSON.stringify(response.data.user));
             
-            // Update Zustand state
             set({
               user: response.data.user,
               token: response.data.token,
               isAuthenticated: true,
-              isLoading: false,
-              error: null
-            });
-
-            console.log('✅ Registration successful, state updated:', {
-              isAuthenticated: true,
-              user: response.data.user
+              isLoading: false
             });
 
             toast.success('Registration successful!');
@@ -46,12 +34,10 @@ export const useAuthStore = create(
             throw new Error(response.message || 'Registration failed');
           }
         } catch (error) {
-          console.error('❌ Registration error:', error);
           const errorMessage = error.message || 'Registration failed. Please try again.';
           set({
             error: errorMessage,
-            isLoading: false,
-            isAuthenticated: false
+            isLoading: false
           });
           toast.error(errorMessage);
           throw error;
@@ -61,40 +47,19 @@ export const useAuthStore = create(
       login: async (email, password) => {
         set({ isLoading: true, error: null });
         try {
-          console.log('🔓 Calling authAPI.login with params:', { email });
-          
           const response = await authAPI.login(email, password);
           
-          console.log('📦 Login API response:', response);
-          
           if (response.success && response.data?.token) {
-            // Store in localStorage
             localStorage.setItem('token', response.data.token);
             localStorage.setItem('user', JSON.stringify(response.data.user));
             
-            // Update Zustand state - THIS IS CRITICAL
             set({
               user: response.data.user,
               token: response.data.token,
-              isAuthenticated: true,  // ✅ MUST BE TRUE
+              isAuthenticated: true,
               isLoading: false,
               error: null
             });
-
-            console.log('✅ Login successful, state updated:', {
-              isAuthenticated: true,
-              token: response.data.token.substring(0, 20) + '...',
-              user: response.data.user
-            });
-
-            // Verify state was actually set
-            setTimeout(() => {
-              const currentState = get();
-              console.log('🔍 State verification after login:', {
-                isAuthenticated: currentState.isAuthenticated,
-                hasToken: !!currentState.token
-              });
-            }, 100);
 
             toast.success('Login successful!');
             return response.data;
@@ -102,12 +67,10 @@ export const useAuthStore = create(
             throw new Error(response.message || 'Login failed');
           }
         } catch (error) {
-          console.error('❌ Login error:', error);
           const errorMessage = error.message || 'Invalid email or password. Please try again.';
           set({
             error: errorMessage,
-            isLoading: false,
-            isAuthenticated: false
+            isLoading: false
           });
           toast.error(errorMessage);
           throw error;
@@ -115,53 +78,40 @@ export const useAuthStore = create(
       },
 
       logout: async () => {
-        try {
-          console.log('👋 Logout initiated...');
-          
-          // Try to call backend logout
           try {
-            await authAPI.logout();
+            console.log('👋 Logout initiated...');
+            
+            try {
+              await authAPI.logout();
+            } catch (error) {
+              console.warn('Backend logout failed:', error);
+            }
+            
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('auth-storage');
+            
+            set({
+              user: null,
+              token: null,
+              isAuthenticated: false,
+              isLoading: false,
+              error: null
+            });
+            
+            console.log('✅ Logout successful');
+            toast.success('Logged out successfully');
+            return true;
           } catch (error) {
-            console.warn('Backend logout failed:', error);
+            console.error('❌ Logout error:', error);
+            toast.error('Logout failed');
+            throw error;
           }
-          
-          // Clear localStorage
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          localStorage.removeItem('auth-storage'); // Clear persist
-          
-          // Clear Zustand state
-          set({
-            user: null,
-            token: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null
-          });
-          
-          console.log('✅ Logout successful, state cleared');
-          toast.success('Logged out successfully');
-          return true;
-        } catch (error) {
-          console.error('❌ Logout error:', error);
-          // Even if logout fails, clear local state
-          localStorage.clear();
-          set({
-            user: null,
-            token: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null
-          });
-          toast.error('Logout failed but cleared local session');
-          return true;
-        }
-      },
+        },
 
       fetchUser: async () => {
         set({ isLoading: true });
         try {
-          console.log('👤 Fetching current user...');
           const response = await authAPI.getMe();
           
           if (response.success && response.data) {
@@ -170,14 +120,12 @@ export const useAuthStore = create(
               isAuthenticated: true,
               isLoading: false
             });
-            console.log('✅ User fetched successfully');
             return response.data;
           }
         } catch (error) {
-          console.error('❌ Fetch user error:', error);
+          console.error('Fetch user error:', error);
           localStorage.removeItem('token');
           localStorage.removeItem('user');
-          localStorage.removeItem('auth-storage');
           
           set({
             user: null,
@@ -216,52 +164,27 @@ export const useAuthStore = create(
         }
       },
 
-      // ✅ FIXED: Make initializeAuth properly sync with localStorage
       initializeAuth: () => {
-        console.log('🔄 Initializing auth from localStorage...');
-        
         const token = localStorage.getItem('token');
-        const userStr = localStorage.getItem('user');
+        const user = localStorage.getItem('user');
 
-        if (token && userStr) {
+        if (token && user) {
           try {
-            const user = JSON.parse(userStr);
-            
-            console.log('✅ Found stored auth, restoring session');
-            
             set({
               token,
-              user,
+              user: JSON.parse(user),
               isAuthenticated: true
             });
-            
-            // Verify state was set
-            setTimeout(() => {
-              const currentState = get();
-              console.log('🔍 State after init:', {
-                isAuthenticated: currentState.isAuthenticated,
-                hasToken: !!currentState.token
-              });
-            }, 50);
-            
           } catch (error) {
-            console.error('❌ Failed to parse user data:', error);
+            console.error('Failed to parse user data:', error);
             localStorage.removeItem('token');
             localStorage.removeItem('user');
-            localStorage.removeItem('auth-storage');
             set({
               token: null,
               user: null,
               isAuthenticated: false
             });
           }
-        } else {
-          console.log('ℹ️ No stored auth found');
-          set({
-            token: null,
-            user: null,
-            isAuthenticated: false
-          });
         }
       },
 
@@ -270,10 +193,8 @@ export const useAuthStore = create(
       },
 
       clearAuth: () => {
-        console.log('🧹 Clearing all auth data...');
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        localStorage.removeItem('auth-storage');
         set({
           user: null,
           token: null,
@@ -285,14 +206,11 @@ export const useAuthStore = create(
     }),
     {
       name: 'auth-storage',
-      // ✅ IMPORTANT: Only persist these fields
       partialize: (state) => ({
         user: state.user,
         token: state.token,
         isAuthenticated: state.isAuthenticated
-      }),
-      // ✅ Add version to force re-hydration if needed
-      version: 1,
+      })
     }
   )
 );

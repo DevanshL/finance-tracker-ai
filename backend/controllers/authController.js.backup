@@ -1,0 +1,268 @@
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+
+// Generate JWT Token
+const generateToken = (userId) => {
+  return jwt.sign(
+    { id: userId },
+    process.env.JWT_SECRET || 'your_secret_key',
+    { expiresIn: process.env.JWT_EXPIRE || '7d' }
+  );
+};
+
+// @desc    Register user
+// @route   POST /api/auth/register
+// @access  Public
+exports.register = async (req, res, next) => {
+  try {
+    console.log('📝 Register request:', { 
+      name: req.body.name, 
+      email: req.body.email,
+      hasPassword: !!req.body.password
+    });
+
+    const { name, email, password, passwordConfirm } = req.body;
+
+    if (!name || !email || !password || !passwordConfirm) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields'
+      });
+    }
+
+    if (password !== passwordConfirm) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    let userExists = await User.findOne({ email: normalizedEmail });
+    if (userExists) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already registered'
+      });
+    }
+
+    const user = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      password: password,
+      passwordConfirm: passwordConfirm
+    });
+
+    console.log('✅ User registered:', user._id);
+
+    const token = generateToken(user._id);
+
+    return res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      data: {
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Register error:', error.message);
+    
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already registered'
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Registration failed'
+    });
+  }
+};
+
+// @desc    Login user
+// @route   POST /api/auth/login
+// @access  Public
+exports.login = async (req, res, next) => {
+  try {
+    console.log('🔐 Login request:', { email: req.body.email });
+
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password required'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
+
+    if (!user) {
+      console.log('❌ User not found:', normalizedEmail);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    let isPasswordCorrect = false;
+    if (user.comparePassword) {
+      isPasswordCorrect = await user.comparePassword(password);
+    } else {
+      isPasswordCorrect = password === user.password;
+    }
+
+    if (!isPasswordCorrect) {
+      console.log('❌ Wrong password for:', normalizedEmail);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    const token = generateToken(user._id);
+
+    console.log('✅ User logged in:', user.email);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Login error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Login failed'
+    });
+  }
+};
+
+// @desc    Get current user
+// @route   GET /api/auth/me
+// @access  Private
+exports.getMe = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: user
+    });
+
+  } catch (error) {
+    console.error('❌ Get user error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user'
+    });
+  }
+};
+
+// @desc    Update password
+// @route   PUT /api/auth/password
+// @access  Private
+exports.updatePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword, newPasswordConfirm } = req.body;
+
+    if (!currentPassword || !newPassword || !newPasswordConfirm) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all fields'
+      });
+    }
+
+    if (newPassword !== newPasswordConfirm) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+
+    const user = await User.findById(req.user.id).select('+password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const isPasswordCorrect = await user.comparePassword(currentPassword);
+
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password incorrect'
+      });
+    }
+
+    user.password = newPassword;
+    user.passwordConfirm = newPasswordConfirm;
+    await user.save();
+
+    console.log('✅ Password updated:', user.email);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password updated'
+    });
+
+  } catch (error) {
+    console.error('❌ Update password error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update password'
+    });
+  }
+};
+
+// @desc    Logout user
+// @route   POST /api/auth/logout
+// @access  Private
+exports.logout = async (req, res, next) => {
+  try {
+    console.log('👋 User logout:', req.user.email);
+    if (req.session) {
+      req.session.destroy();
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('❌ Logout error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Logout failed'
+    });
+  }
+};
+
+module.exports = exports;

@@ -2,22 +2,14 @@ import api from './axios';
 
 export const authAPI = {
   // Register new user
-  register: async (name, email, password, passwordConfirm) => {
-    const response = await api.post('/auth/register', {
-      name,
-      email,
-      password,
-      passwordConfirm
-    });
+  register: async (data) => {
+    const response = await api.post('/auth/register', data);
     return response.data;
   },
 
   // Login user
-  login: async (email, password) => {
-    const response = await api.post('/auth/login', {
-      email,
-      password
-    });
+  login: async (credentials) => {
+    const response = await api.post('/auth/login', credentials);
     return response.data;
   },
 
@@ -33,13 +25,9 @@ export const authAPI = {
     return response.data;
   },
 
-  // Update password
-  updatePassword: async (currentPassword, newPassword, newPasswordConfirm) => {
-    const response = await api.put('/auth/password', {
-      currentPassword,
-      newPassword,
-      newPasswordConfirm
-    });
+  // Change password
+  changePassword: async (data) => {
+    const response = await api.put('/auth/password', data);
     return response.data;
   },
 

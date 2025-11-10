@@ -53,18 +53,40 @@ function Register() {
   };
 
   const onSubmit = async (data) => {
-  try {
-    await registerUser({
-      name: data.name,
-      email: data.email,
-      password: data.password,
-      confirmPassword: data.confirmPassword, // Add this line!
-    });
-    navigate('/dashboard');
-  } catch (error) {
-    // Error handled by axios interceptor
-  }
-};
+    try {
+      console.log('👤 Registration attempt:', { name: data.name, email: data.email });
+      
+      // Call registerUser from Zustand store with proper parameters
+      const response = await registerUser(
+        data.name,
+        data.email,
+        data.password,
+        data.confirmPassword
+      );
+      
+      console.log('📦 Registration response:', response);
+      
+      // Check if response has success and token
+      if (response && response.success && response.data?.token) {
+        console.log('✅ Registration successful! User:', response.data.user);
+        console.log('🔄 Redirecting to dashboard...');
+        
+        // Wait a bit then redirect
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 300);
+      } else if (response && response.success) {
+        // Also handle case where we just have success flag
+        console.log('✅ Registration successful!');
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 300);
+      }
+    } catch (error) {
+      console.error('❌ Registration error caught:', error);
+      // Error is already handled by Zustand store with toast notification
+    }
+  };
 
   return (
     <div className="min-h-screen flex">
@@ -157,6 +179,7 @@ function Register() {
                   id="name"
                   className={`input pl-10 ${errors.name ? 'input-error' : ''}`}
                   placeholder="John Doe"
+                  disabled={isLoading}
                 />
               </div>
               {errors.name && (
@@ -179,6 +202,7 @@ function Register() {
                   id="email"
                   className={`input pl-10 ${errors.email ? 'input-error' : ''}`}
                   placeholder="you@example.com"
+                  disabled={isLoading}
                 />
               </div>
               {errors.email && (
@@ -201,11 +225,13 @@ function Register() {
                   id="password"
                   className={`input pl-10 pr-10 ${errors.password ? 'input-error' : ''}`}
                   placeholder="••••••••"
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  disabled={isLoading}
                 >
                   {showPassword ? (
                     <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-600" />
@@ -259,11 +285,13 @@ function Register() {
                   id="confirmPassword"
                   className={`input pl-10 pr-10 ${errors.confirmPassword ? 'input-error' : ''}`}
                   placeholder="••••••••"
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  disabled={isLoading}
                 >
                   {showConfirmPassword ? (
                     <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-600" />
@@ -285,6 +313,7 @@ function Register() {
                 type="checkbox"
                 required
                 className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
+                disabled={isLoading}
               />
               <label htmlFor="terms" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                 I agree to the{' '}
@@ -300,11 +329,11 @@ function Register() {
 
             {/* Submit Button */}
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: isLoading ? 1 : 1.02 }}
+              whileTap={{ scale: isLoading ? 1 : 0.98 }}
               type="submit"
               disabled={isLoading}
-              className="btn-primary w-full btn-lg"
+              className="btn-primary w-full btn-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>

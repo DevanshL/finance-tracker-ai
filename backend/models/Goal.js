@@ -1,56 +1,20 @@
 const mongoose = require('mongoose');
 
-const milestoneSchema = new mongoose.Schema({
-  amount: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  description: {
-    type: String,
-    trim: true
-  },
-  achieved: {
-    type: Boolean,
-    default: false
-  },
-  achievedDate: {
-    type: Date
-  }
-}, { _id: true });
-
-const contributionSchema = new mongoose.Schema({
-  amount: {
-    type: Number,
-    required: true,
-    min: 0.01
-  },
-  date: {
-    type: Date,
-    default: Date.now
-  },
-  note: {
-    type: String,
-    trim: true
-  }
-}, { timestamps: true });
-
 const goalSchema = new mongoose.Schema({
-  userId: {
+  user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'User ID is required'],
-    index: true
+    required: [true, 'User ID is required']
   },
   name: {
     type: String,
     required: [true, 'Goal name is required'],
     trim: true,
-    maxlength: [100, 'Name cannot exceed 100 characters']
+    maxlength: [100, 'Goal name cannot exceed 100 characters']
   },
   description: {
     type: String,
-    trim: true,
+    default: '',
     maxlength: [500, 'Description cannot exceed 500 characters']
   },
   targetAmount: {
@@ -63,137 +27,53 @@ const goalSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Current amount cannot be negative']
   },
+  // Accept both deadline and targetDate
   targetDate: {
     type: Date,
     required: [true, 'Target date is required']
   },
-  priority: {
-    type: String,
-    enum: ['low', 'medium', 'high'],
-    default: 'medium'
-  },
-  status: {
-    type: String,
-    enum: ['active', 'completed', 'cancelled'],
-    default: 'active'
+  deadline: {
+    type: Date
   },
   category: {
     type: String,
-    trim: true,
-    default: 'General'
+    default: 'Other',
+    enum: ['Savings', 'Education', 'Travel', 'Health', 'Home', 'Other']
   },
-  milestones: [milestoneSchema],
-  contributions: [contributionSchema]
+  priority: {
+    type: String,
+    default: 'medium',
+    enum: ['low', 'medium', 'high']
+  },
+  status: {
+    type: String,
+    default: 'active',
+    enum: ['active', 'completed', 'cancelled']
+  },
+  progress: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
 }, {
   timestamps: true
 });
 
-// Indexes
-goalSchema.index({ userId: 1, status: 1 });
-goalSchema.index({ userId: 1, targetDate: 1 });
-goalSchema.index({ userId: 1, priority: 1 });
-
-// Virtual for remaining amount
-goalSchema.virtual('remainingAmount').get(function() {
-  return Math.max(0, this.targetAmount - this.currentAmount);
-});
-
-// Virtual for progress percentage
-goalSchema.virtual('progressPercentage').get(function() {
-  return this.targetAmount > 0
-    ? Math.min(100, Math.round((this.currentAmount / this.targetAmount) * 100))
-    : 0;
-});
-
-// Virtual for days remaining
-goalSchema.virtual('daysRemaining').get(function() {
-  const now = new Date();
-  const diff = this.targetDate - now;
-  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-});
-
-// Virtual for monthly savings needed
-goalSchema.virtual('monthlySavingsNeeded').get(function() {
-  const monthsRemaining = this.daysRemaining / 30;
-  if (monthsRemaining <= 0) return this.remainingAmount;
-  return Math.ceil(this.remainingAmount / monthsRemaining);
-});
-
-// Virtual for is achieved
-goalSchema.virtual('isAchieved').get(function() {
-  return this.currentAmount >= this.targetAmount;
-});
-
-// Virtual for is overdue
-goalSchema.virtual('isOverdue').get(function() {
-  return new Date() > this.targetDate && !this.isAchieved;
-});
-
-// Ensure virtuals are included in JSON
-goalSchema.set('toJSON', { virtuals: true });
-goalSchema.set('toObject', { virtuals: true });
-
-// Instance method to add contribution
-goalSchema.methods.addContribution = async function(amount, note) {
-  this.contributions.push({
-    amount,
-    note,
-    date: new Date()
-  });
-
-  this.currentAmount += amount;
-
-  // Check if goal is achieved
-  if (this.currentAmount >= this.targetAmount) {
-    this.status = 'completed';
-  }
-
-  // Check milestones
-  this.milestones.forEach(milestone => {
-    if (!milestone.achieved && this.currentAmount >= milestone.amount) {
-      milestone.achieved = true;
-      milestone.achievedDate = new Date();
-    }
-  });
-
-  await this.save();
-  return this;
-};
-
-// Static method to get user's active goals
-goalSchema.statics.getActiveGoals = async function(userId) {
-  return await this.find({
-    userId,
-    status: 'active'
-  }).sort({ priority: -1, targetDate: 1 });
-};
-
-// Static method to get goals summary
-goalSchema.statics.getGoalsSummary = async function(userId) {
-  const goals = await this.find({ userId });
-
-  const summary = {
-    total: goals.length,
-    active: goals.filter(g => g.status === 'active').length,
-    completed: goals.filter(g => g.status === 'completed').length,
-    totalTargetAmount: goals.reduce((sum, g) => sum + g.targetAmount, 0),
-    totalCurrentAmount: goals.reduce((sum, g) => sum + g.currentAmount, 0),
-    totalContributions: goals.reduce((sum, g) => sum + g.contributions.length, 0)
-  };
-
-  summary.overallProgress = summary.totalTargetAmount > 0
-    ? Math.round((summary.totalCurrentAmount / summary.totalTargetAmount) * 100)
-    : 0;
-
-  return summary;
-};
-
-// Pre-save validation
+// Set deadline to targetDate if not provided
 goalSchema.pre('save', function(next) {
-  if (this.targetDate <= new Date() && this.isNew) {
-    next(new Error('Target date must be in the future'));
+  if (this.targetDate && !this.deadline) {
+    this.deadline = this.targetDate;
   }
   next();
 });
 
-module.exports = mongoose.models.Goal || mongoose.model('Goal', goalSchema);
+module.exports = mongoose.model('Goal', goalSchema);

@@ -1,5 +1,60 @@
 const Goal = require('../models/Goal');
-const Transaction = require('../models/Transaction');
+
+// @desc    Get all goals
+// @route   GET /api/goals
+// @access  Private
+exports.getGoals = async (req, res, next) => {
+  try {
+    const goals = await Goal.find({ user: req.user._id }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: goals.length,
+      data: goals
+    });
+  } catch (error) {
+    console.error('Error getting goals:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching goals'
+    });
+  }
+};
+
+// @desc    Get a single goal
+// @route   GET /api/goals/:id
+// @access  Private
+exports.getGoal = async (req, res, next) => {
+  try {
+    const goal = await Goal.findById(req.params.id);
+
+    if (!goal) {
+      return res.status(404).json({
+        success: false,
+        message: 'Goal not found'
+      });
+    }
+
+    // Check if user owns the goal
+    if (goal.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this goal'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: goal
+    });
+  } catch (error) {
+    console.error('Error getting goal:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching goal'
+    });
+  }
+};
 
 // @desc    Create a new goal
 // @route   POST /api/goals
@@ -11,16 +66,22 @@ exports.createGoal = async (req, res, next) => {
       description,
       targetAmount,
       currentAmount,
+      deadline,
       targetDate,
       category,
       priority
     } = req.body;
 
+    console.log('🎯 Creating goal:', { name, targetAmount, deadline, targetDate });
+
+    // Use deadline or targetDate (support both field names)
+    const goalDate = deadline || targetDate;
+
     // Validate required fields
-    if (!name || !targetAmount || !targetDate) {
+    if (!name || !targetAmount || !goalDate) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide name, target amount, and target date'
+        message: 'Please provide name, targetAmount, and deadline (or targetDate)'
       });
     }
 
@@ -32,11 +93,12 @@ exports.createGoal = async (req, res, next) => {
       });
     }
 
-    // Validate target date is in the future
-    if (new Date(targetDate) <= new Date()) {
+    // Validate deadline is in the future
+    const deadlineDate = new Date(goalDate);
+    if (deadlineDate <= new Date()) {
       return res.status(400).json({
         success: false,
-        message: 'Target date must be in the future'
+        message: 'Deadline must be in the future'
       });
     }
 
@@ -52,13 +114,17 @@ exports.createGoal = async (req, res, next) => {
     const goal = await Goal.create({
       user: req.user._id,
       name,
-      description,
+      description: description || '',
       targetAmount,
       currentAmount: currentAmount || 0,
-      targetDate,
-      category,
-      priority: priority || 'medium'
+      deadline: deadlineDate,
+      category: category || 'Other',
+      priority: priority || 'medium',
+      status: 'active',
+      progress: (currentAmount || 0) / targetAmount * 100
     });
+
+    console.log('✅ Goal created:', goal._id);
 
     res.status(201).json({
       success: true,
@@ -66,63 +132,21 @@ exports.createGoal = async (req, res, next) => {
       data: goal
     });
   } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get all goals for logged in user
-// @route   GET /api/goals
-// @access  Private
-exports.getGoals = async (req, res, next) => {
-  try {
-    const { status, priority, category } = req.query;
-
-    // Build filter
-    const filter = { user: req.user._id };
-
-    if (status) {
-      filter.status = status;
-    }
-
-    if (priority) {
-      filter.priority = priority;
-    }
-
-    if (category) {
-      filter.category = category;
-    }
-
-    const goals = await Goal.find(filter).sort({ createdAt: -1 });
-
-    // Calculate additional statistics
-    const stats = {
-      total: goals.length,
-      active: goals.filter(g => g.status === 'active').length,
-      completed: goals.filter(g => g.status === 'completed').length,
-      paused: goals.filter(g => g.status === 'paused').length,
-      totalTargetAmount: goals.reduce((sum, g) => sum + g.targetAmount, 0),
-      totalCurrentAmount: goals.reduce((sum, g) => sum + g.currentAmount, 0),
-      totalProgress: goals.length > 0 
-        ? (goals.reduce((sum, g) => sum + g.progress, 0) / goals.length).toFixed(2)
-        : 0
-    };
-
-    res.status(200).json({
-      success: true,
-      count: goals.length,
-      stats,
-      data: goals
+    console.error('Error creating goal:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error creating goal'
     });
-  } catch (error) {
-    next(error);
   }
 };
 
-// @desc    Get single goal by ID
-// @route   GET /api/goals/:id
+// @desc    Update a goal
+// @route   PUT /api/goals/:id
 // @access  Private
-exports.getGoal = async (req, res, next) => {
+exports.updateGoal = async (req, res, next) => {
   try {
+    const { name, description, targetAmount, currentAmount, deadline, priority, status } = req.body;
+
     const goal = await Goal.findById(req.params.id);
 
     if (!goal) {
@@ -132,44 +156,7 @@ exports.getGoal = async (req, res, next) => {
       });
     }
 
-    // Check if goal belongs to user
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to access this goal'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: goal
-    });
-  } catch (error) {
-    if (error.name === 'CastError') {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-    next(error);
-  }
-};
-
-// @desc    Update goal
-// @route   PUT /api/goals/:id
-// @access  Private
-exports.updateGoal = async (req, res, next) => {
-  try {
-    let goal = await Goal.findById(req.params.id);
-
-    if (!goal) {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-
-    // Check if goal belongs to user
+    // Check if user owns the goal
     if (goal.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -177,52 +164,22 @@ exports.updateGoal = async (req, res, next) => {
       });
     }
 
-    const {
-      name,
-      description,
-      targetAmount,
-      currentAmount,
-      targetDate,
-      category,
-      priority,
-      status
-    } = req.body;
-
-    // Validate target amount if updating
-    if (targetAmount && targetAmount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Target amount must be greater than 0'
-      });
-    }
-
-    // Validate current amount if updating
-    if (currentAmount !== undefined && currentAmount < 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current amount cannot be negative'
-      });
-    }
-
-    // Validate target date if updating
-    if (targetDate && new Date(targetDate) <= new Date()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Target date must be in the future'
-      });
-    }
-
-    // Update fields
     if (name) goal.name = name;
     if (description !== undefined) goal.description = description;
     if (targetAmount) goal.targetAmount = targetAmount;
     if (currentAmount !== undefined) goal.currentAmount = currentAmount;
-    if (targetDate) goal.targetDate = targetDate;
-    if (category) goal.category = category;
+    if (deadline) goal.deadline = deadline;
     if (priority) goal.priority = priority;
     if (status) goal.status = status;
 
+    // Update progress
+    if (currentAmount !== undefined || targetAmount) {
+      goal.progress = ((currentAmount || goal.currentAmount) / (targetAmount || goal.targetAmount)) * 100;
+    }
+
     await goal.save();
+
+    console.log('✅ Goal updated:', goal._id);
 
     res.status(200).json({
       success: true,
@@ -230,17 +187,15 @@ exports.updateGoal = async (req, res, next) => {
       data: goal
     });
   } catch (error) {
-    if (error.name === 'CastError') {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-    next(error);
+    console.error('Error updating goal:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error updating goal'
+    });
   }
 };
 
-// @desc    Delete goal
+// @desc    Delete a goal
 // @route   DELETE /api/goals/:id
 // @access  Private
 exports.deleteGoal = async (req, res, next) => {
@@ -254,7 +209,7 @@ exports.deleteGoal = async (req, res, next) => {
       });
     }
 
-    // Check if goal belongs to user
+    // Check if user owns the goal
     if (goal.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -262,35 +217,34 @@ exports.deleteGoal = async (req, res, next) => {
       });
     }
 
-    await goal.deleteOne();
+    await Goal.findByIdAndDelete(req.params.id);
+
+    console.log('✅ Goal deleted:', req.params.id);
 
     res.status(200).json({
       success: true,
-      message: 'Goal deleted successfully',
-      data: {}
+      message: 'Goal deleted successfully'
     });
   } catch (error) {
-    if (error.name === 'CastError') {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-    next(error);
+    console.error('Error deleting goal:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error deleting goal'
+    });
   }
 };
 
-// @desc    Add contribution to goal
-// @route   POST /api/goals/:id/contribute
+// @desc    Contribute to goal
+// @route   PATCH /api/goals/:id/progress
 // @access  Private
-exports.contributeToGoal = async (req, res, next) => {
+exports.updateGoalProgress = async (req, res, next) => {
   try {
-    const { amount, note } = req.body;
+    const { amount } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid contribution amount'
+        message: 'Please provide a valid amount'
       });
     }
 
@@ -303,153 +257,6 @@ exports.contributeToGoal = async (req, res, next) => {
       });
     }
 
-    // Check if goal belongs to user
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to contribute to this goal'
-      });
-    }
-
-    // Check if goal is active
-    if (goal.status !== 'active') {
-      return res.status(400).json({
-        success: false,
-        message: 'Can only contribute to active goals'
-      });
-    }
-
-    // Add contribution
-    goal.currentAmount += amount;
-
-    // Add to contributions array
-    goal.contributions.push({
-      amount,
-      note: note || '',
-      date: new Date()
-    });
-
-    // Check if goal is completed
-    if (goal.currentAmount >= goal.targetAmount) {
-      goal.status = 'completed';
-      goal.completedDate = new Date();
-    }
-
-    await goal.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Contribution added successfully',
-      data: goal
-    });
-  } catch (error) {
-    if (error.name === 'CastError') {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-    next(error);
-  }
-};
-
-// @desc    Withdraw from goal
-// @route   POST /api/goals/:id/withdraw
-// @access  Private
-exports.withdrawFromGoal = async (req, res, next) => {
-  try {
-    const { amount, note } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid withdrawal amount'
-      });
-    }
-
-    const goal = await Goal.findById(req.params.id);
-
-    if (!goal) {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-
-    // Check if goal belongs to user
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to withdraw from this goal'
-      });
-    }
-
-    // Check if sufficient funds
-    if (goal.currentAmount < amount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient funds in goal'
-      });
-    }
-
-    // Subtract withdrawal
-    goal.currentAmount -= amount;
-
-    // Add to withdrawals array
-    goal.withdrawals.push({
-      amount,
-      note: note || '',
-      date: new Date()
-    });
-
-    // If was completed, set back to active
-    if (goal.status === 'completed' && goal.currentAmount < goal.targetAmount) {
-      goal.status = 'active';
-      goal.completedDate = null;
-    }
-
-    await goal.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Withdrawal processed successfully',
-      data: goal
-    });
-  } catch (error) {
-    if (error.name === 'CastError') {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-    next(error);
-  }
-};
-
-// @desc    Update goal status
-// @route   PATCH /api/goals/:id/status
-// @access  Private
-exports.updateGoalStatus = async (req, res, next) => {
-  try {
-    const { status } = req.body;
-
-    if (!status || !['active', 'completed', 'paused', 'cancelled'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid status (active, completed, paused, cancelled)'
-      });
-    }
-
-    const goal = await Goal.findById(req.params.id);
-
-    if (!goal) {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-
-    // Check if goal belongs to user
     if (goal.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -457,33 +264,115 @@ exports.updateGoalStatus = async (req, res, next) => {
       });
     }
 
-    goal.status = status;
+    goal.currentAmount += amount;
+    goal.progress = (goal.currentAmount / goal.targetAmount) * 100;
 
-    if (status === 'completed') {
-      goal.completedDate = new Date();
-    } else if (status === 'active') {
-      goal.completedDate = null;
+    if (goal.currentAmount >= goal.targetAmount) {
+      goal.status = 'completed';
     }
 
     await goal.save();
 
+    console.log('✅ Goal progress updated:', goal._id);
+
     res.status(200).json({
       success: true,
-      message: `Goal status updated to ${status}`,
+      message: 'Goal progress updated successfully',
       data: goal
     });
   } catch (error) {
-    if (error.name === 'CastError') {
+    console.error('Error updating goal progress:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error updating goal progress'
+    });
+  }
+};
+
+// @desc    Get goal progress
+// @route   GET /api/goals/:id/progress
+// @access  Private
+exports.getGoalProgress = async (req, res, next) => {
+  try {
+    const goal = await Goal.findById(req.params.id);
+
+    if (!goal) {
       return res.status(404).json({
         success: false,
         message: 'Goal not found'
       });
     }
-    next(error);
+
+    if (goal.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this goal'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        goalId: goal._id,
+        name: goal.name,
+        progress: goal.progress,
+        currentAmount: goal.currentAmount,
+        targetAmount: goal.targetAmount,
+        status: goal.status
+      }
+    });
+  } catch (error) {
+    console.error('Error getting goal progress:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching goal progress'
+    });
   }
 };
 
-// @desc    Get goal statistics
+// @desc    Get active goals
+// @route   GET /api/goals/status/active
+// @access  Private
+exports.getActiveGoals = async (req, res, next) => {
+  try {
+    const goals = await Goal.find({ user: req.user._id, status: 'active' }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: goals.length,
+      data: goals
+    });
+  } catch (error) {
+    console.error('Error getting active goals:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching goals'
+    });
+  }
+};
+
+// @desc    Get completed goals
+// @route   GET /api/goals/status/completed
+// @access  Private
+exports.getCompletedGoals = async (req, res, next) => {
+  try {
+    const goals = await Goal.find({ user: req.user._id, status: 'completed' }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: goals.length,
+      data: goals
+    });
+  } catch (error) {
+    console.error('Error getting completed goals:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching goals'
+    });
+  }
+};
+
+// @desc    Get goal stats
 // @route   GET /api/goals/stats
 // @access  Private
 exports.getGoalStats = async (req, res, next) => {
@@ -491,35 +380,12 @@ exports.getGoalStats = async (req, res, next) => {
     const goals = await Goal.find({ user: req.user._id });
 
     const stats = {
-      totalGoals: goals.length,
-      activeGoals: goals.filter(g => g.status === 'active').length,
-      completedGoals: goals.filter(g => g.status === 'completed').length,
-      pausedGoals: goals.filter(g => g.status === 'paused').length,
-      cancelledGoals: goals.filter(g => g.status === 'cancelled').length,
-      
-      totalTargetAmount: goals.reduce((sum, g) => sum + g.targetAmount, 0),
-      totalCurrentAmount: goals.reduce((sum, g) => sum + g.currentAmount, 0),
-      totalRemaining: goals.reduce((sum, g) => sum + (g.targetAmount - g.currentAmount), 0),
-      
-      averageProgress: goals.length > 0 
-        ? (goals.reduce((sum, g) => sum + g.progress, 0) / goals.length).toFixed(2)
-        : 0,
-      
-      highPriorityGoals: goals.filter(g => g.priority === 'high' && g.status === 'active').length,
-      mediumPriorityGoals: goals.filter(g => g.priority === 'medium' && g.status === 'active').length,
-      lowPriorityGoals: goals.filter(g => g.priority === 'low' && g.status === 'active').length,
-
-      nearingDeadline: goals.filter(g => {
-        const daysLeft = Math.ceil((new Date(g.targetDate) - new Date()) / (1000 * 60 * 60 * 24));
-        return g.status === 'active' && daysLeft <= 30 && daysLeft > 0;
-      }).length,
-
-      overdue: goals.filter(g => {
-        return g.status === 'active' && new Date(g.targetDate) < new Date();
-      }).length,
-
-      totalContributions: goals.reduce((sum, g) => sum + g.contributions.length, 0),
-      totalWithdrawals: goals.reduce((sum, g) => sum + g.withdrawals.length, 0)
+      total: goals.length,
+      active: goals.filter(g => g.status === 'active').length,
+      completed: goals.filter(g => g.status === 'completed').length,
+      totalTarget: goals.reduce((sum, g) => sum + g.targetAmount, 0),
+      totalSaved: goals.reduce((sum, g) => sum + g.currentAmount, 0),
+      averageProgress: goals.length > 0 ? goals.reduce((sum, g) => sum + g.progress, 0) / goals.length : 0
     };
 
     res.status(200).json({
@@ -527,6 +393,36 @@ exports.getGoalStats = async (req, res, next) => {
       data: stats
     });
   } catch (error) {
-    next(error);
+    console.error('Error getting goal stats:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching goal stats'
+    });
+  }
+};
+
+// @desc    Get recommendations
+// @route   GET /api/goals/recommendations/smart
+// @access  Private
+exports.getRecommendations = async (req, res, next) => {
+  try {
+    const goals = await Goal.find({ user: req.user._id });
+
+    const recommendations = {
+      activeGoals: goals.filter(g => g.status === 'active').length,
+      recommendedNewGoals: 3 - goals.filter(g => g.status === 'active').length,
+      totalProgress: goals.length > 0 ? goals.reduce((sum, g) => sum + g.progress, 0) / goals.length : 0
+    };
+
+    res.status(200).json({
+      success: true,
+      data: recommendations
+    });
+  } catch (error) {
+    console.error('Error getting recommendations:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching recommendations'
+    });
   }
 };

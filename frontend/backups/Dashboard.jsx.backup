@@ -1,27 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import useAuthStore from '../store/authStore';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
-  const [loading, setLoading] = useState(false);
+  const [user] = useState(() => {
+    const userData = localStorage.getItem('user');
+    return userData ? JSON.parse(userData) : null;
+  });
 
-  useEffect(() => {
-    console.log('📊 Dashboard loaded, user:', user);
-  }, [user]);
-
-  const handleLogout = async () => {
-    try {
-      setLoading(true);
-      console.log('👋 Initiating logout...');
-      await logout();
-      console.log('✅ Logout successful, redirecting to login...');
-      navigate('/login', { replace: true });
-    } catch (error) {
-      console.error('❌ Logout error:', error);
-      setLoading(false);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
   };
 
   return (
@@ -40,18 +30,17 @@ export default function Dashboard() {
         </h1>
         <button
           onClick={handleLogout}
-          disabled={loading}
           style={{
             padding: '10px 20px',
-            backgroundColor: loading ? '#ccc' : '#ef4444',
+            backgroundColor: '#ef4444',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
-            cursor: loading ? 'not-allowed' : 'pointer',
+            cursor: 'pointer',
             fontWeight: 'bold'
           }}
         >
-          {loading ? 'Logging out...' : 'Logout'}
+          Logout
         </button>
       </nav>
 
@@ -109,65 +98,58 @@ export default function Dashboard() {
               border: '1px solid #bbf7d0',
               borderRadius: '8px',
               cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = 'none';
-              e.currentTarget.style.transform = 'none';
-            }}
-            >
+            }}>
               <div style={{ fontSize: '32px', marginBottom: '10px' }}>📊</div>
               <h3 style={{ fontWeight: 'bold', marginBottom: '5px' }}>Analytics</h3>
-              <p style={{ fontSize: '14px', color: '#666' }}>View detailed analytics</p>
+              <p style={{ fontSize: '14px', color: '#666' }}>View your spending patterns</p>
             </div>
 
             <div style={{
               padding: '20px',
-              backgroundColor: '#fef3c7',
-              border: '1px solid #fcd34d',
+              backgroundColor: '#fefce8',
+              border: '1px solid #fef08a',
               borderRadius: '8px',
               cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = 'none';
-              e.currentTarget.style.transform = 'none';
-            }}
-            >
+            }}>
               <div style={{ fontSize: '32px', marginBottom: '10px' }}>🎯</div>
-              <h3 style={{ fontWeight: 'bold', marginBottom: '5px' }}>Goals</h3>
-              <p style={{ fontSize: '14px', color: '#666' }}>Set and track goals</p>
+              <h3 style={{ fontWeight: 'bold', marginBottom: '5px' }}>Budget</h3>
+              <p style={{ fontSize: '14px', color: '#666' }}>Set and track budgets</p>
             </div>
           </div>
 
-          {/* System Status */}
+          {/* Stats */}
           <div style={{
             marginTop: '40px',
-            padding: '20px',
-            backgroundColor: '#f0f9ff',
-            border: '1px solid #bfdbfe',
-            borderRadius: '8px'
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '20px'
           }}>
-            <h3 style={{ fontWeight: 'bold', marginBottom: '15px' }}>System Status</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-              <div>
-                <span style={{ color: '#666' }}>Backend API:</span>
-                <span style={{ marginLeft: '10px', color: '#10b981', fontWeight: 'bold' }}>✓ Connected</span>
-              </div>
-              <div>
-                <span style={{ color: '#666' }}>Authentication:</span>
-                <span style={{ marginLeft: '10px', color: '#10b981', fontWeight: 'bold' }}>✓ Active</span>
-              </div>
-              <div>
-                <span style={{ color: '#666' }}>Token Status:</span>
-                <span style={{ marginLeft: '10px', color: '#10b981', fontWeight: 'bold' }}>✓ Valid</span>
-              </div>
+            <div style={{
+              padding: '20px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px',
+              border: '1px solid #dee2e6'
+            }}>
+              <p style={{ color: '#666', marginBottom: '10px' }}>Total Balance</p>
+              <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#3b82f6' }}>$0.00</p>
+            </div>
+            <div style={{
+              padding: '20px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px',
+              border: '1px solid #dee2e6'
+            }}>
+              <p style={{ color: '#666', marginBottom: '10px' }}>This Month Income</p>
+              <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>$0.00</p>
+            </div>
+            <div style={{
+              padding: '20px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px',
+              border: '1px solid #dee2e6'
+            }}>
+              <p style={{ color: '#666', marginBottom: '10px' }}>This Month Expenses</p>
+              <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#ef4444' }}>$0.00</p>
             </div>
           </div>
         </div>

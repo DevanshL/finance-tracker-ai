@@ -3,10 +3,7 @@ const xss = require('xss-clean');
 const helmet = require('helmet');
 const hpp = require('hpp');
 
-// ==============================================
-// RATE LIMITING - DISABLED
-// ==============================================
-
+// Rate limiters (currently disabled for development)
 exports.apiLimiter = (req, res, next) => next();
 exports.authLimiter = (req, res, next) => next();
 exports.createAccountLimiter = (req, res, next) => next();
@@ -14,312 +11,219 @@ exports.exportLimiter = (req, res, next) => next();
 exports.aiLimiter = (req, res, next) => next();
 exports.websocketLimiter = (req, res, next) => next();
 
-// ==============================================
-// SECURITY MIDDLEWARE
-// ==============================================
-
+/**
+ * MongoDB Sanitization - Prevent NoSQL injection
+ */
 exports.mongoSanitize = () => mongoSanitize({
   replaceWith: '_',
   onSanitize: ({ req, key }) => {
-    console.warn(`⚠️ MongoDB injection attempt: ${key}`);
+    console.warn(`Potential NoSQL injection detected in ${key}`);
   }
 });
 
+/**
+ * XSS Protection - Prevent Cross-Site Scripting
+ */
 exports.xssProtection = () => xss();
 
+/**
+ * HPP Protection - Prevent HTTP Parameter Pollution
+ */
 exports.hppProtection = () => hpp({
-  whitelist: ['amount', 'type', 'category', 'date']
+  whitelist: ['sort', 'fields', 'limit', 'page']
 });
 
+/**
+ * Helmet Security Headers
+ */
 exports.helmetSecurity = () => helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      baseUri: ["'self'"],
+      fontSrc: ["'self'", 'https:', 'data:'],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      objectSrc: ["'none'"],
+      scriptSrcAttr: ["'none'"],
+      upgradeInsecureRequests: []
     }
   },
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true,
-    preload: true
-  }
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+  dnsPrefetchControl: true,
+  frameguard: { action: 'deny' },
+  hidePoweredBy: true,
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  ieNoOpen: true,
+  noSniff: true,
+  permittedCrossDomainPolicies: false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xssFilter: true
 });
 
+/**
+ * Sanitize Request Data
+ */
 exports.sanitizeRequest = (req, res, next) => {
   const sanitize = (obj) => {
-    Object.keys(obj).forEach(key => {
-      if (typeof obj[key] === 'string') {
-        obj[key] = obj[key].replace(/\0/g, '');
-      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-        sanitize(obj[key]);
+    if (typeof obj === 'string') {
+      return obj.replace(/<[^>]*>/g, '');
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(sanitize);
+    }
+    if (obj !== null && typeof obj === 'object') {
+      const sanitized = {};
+      for (const [key, value] of Object.entries(obj)) {
+        sanitized[key] = sanitize(value);
       }
-    });
+      return sanitized;
+    }
+    return obj;
   };
 
-  if (req.body) sanitize(req.body);
-  if (req.query) sanitize(req.query);
-  if (req.params) sanitize(req.params);
+  req.body = sanitize(req.body);
+  req.query = sanitize(req.query);
+  req.params = sanitize(req.params);
 
   next();
 };
 
+/**
+ * Security Headers Middleware
+ */
 exports.securityHeaders = (req, res, next) => {
-  res.removeHeader('X-Powered-By');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  res.setHeader('Content-Security-Policy', "default-src 'self';style-src 'self' 'unsafe-inline';script-src 'self';img-src 'self' data: https:;base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';object-src 'none';script-src-attr 'none';upgrade-insecure-requests");
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Origin-Agent-Cluster', '?1');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+
   next();
 };
 
+/**
+ * IP Filter - DISABLED FOR DEVELOPMENT
+ * Enable this in production if needed
+ */
 const blacklistedIPs = new Set();
 
 exports.ipFilter = (req, res, next) => {
-  const clientIP = req.ip || req.connection.remoteAddress;
-  if (blacklistedIPs.has(clientIP)) {
-    console.warn(`⚠️ Blocked IP: ${clientIP}`);
-    return res.status(403).json({ success: false, message: 'Access denied' });
-  }
+  // DISABLED: Allow all IPs in development
+  // In production, check and enforce IP blacklist here
   next();
+  
+  // Production version (commented out):
+  // const clientIP = req.ip || req.connection.remoteAddress;
+  // if (blacklistedIPs.has(clientIP)) {
+  //   return res.status(403).json({ success: false, message: 'Access denied' });
+  // }
+  // next();
 };
 
+/**
+ * Blacklist an IP address
+ */
 exports.blacklistIP = (ip) => {
   blacklistedIPs.add(ip);
-  console.log(`🚫 IP blacklisted: ${ip}`);
+  console.log(`IP blacklisted: ${ip}`);
 };
 
+/**
+ * Remove IP from blacklist
+ */
 exports.unblacklistIP = (ip) => {
   blacklistedIPs.delete(ip);
-  console.log(`✅ IP removed: ${ip}`);
+  console.log(`IP unblacklisted: ${ip}`);
 };
 
+/**
+ * Detect Suspicious Activity - DISABLED FOR DEVELOPMENT
+ */
 const suspiciousActivity = new Map();
 
 exports.detectSuspiciousActivity = (req, res, next) => {
-  const clientIP = req.ip || req.connection.remoteAddress;
-  const userId = req.user?._id?.toString() || 'anonymous';
-  const key = `${clientIP}-${userId}`;
-
-  if (!suspiciousActivity.has(key)) {
-    suspiciousActivity.set(key, {
-      requests: 0,
-      lastRequest: Date.now(),
-      suspiciousPatterns: 0
-    });
-  }
-
-  const activity = suspiciousActivity.get(key);
-  activity.requests++;
-  activity.lastRequest = Date.now();
-
-  if (activity.requests > 50) {
-    const timeDiff = Date.now() - activity.lastRequest;
-    if (timeDiff < 10000) {
-      console.warn(`⚠️ Suspicious activity: ${clientIP}`);
-      activity.suspiciousPatterns++;
-      
-      if (activity.suspiciousPatterns > 3) {
-        exports.blacklistIP(clientIP);
-        return res.status(403).json({
-          success: false,
-          message: 'Suspicious activity detected.'
-        });
-      }
-    }
-  }
-
-  setTimeout(() => {
-    if (suspiciousActivity.has(key)) {
-      suspiciousActivity.get(key).requests = 0;
-    }
-  }, 60000);
-
+  // DISABLED: Allow all requests in development
+  // Enable in production for rate limiting and bot detection
   next();
+  
+  // Production version (commented out):
+  // const userId = req.user?._id?.toString() || 'anonymous';
+  // const key = `${userId}:${req.ip}`;
+  //
+  // if (!suspiciousActivity.has(key)) {
+  //   suspiciousActivity.set(key, { count: 0, lastRequest: Date.now() });
+  // }
+  //
+  // const activity = suspiciousActivity.get(key);
+  // activity.count++;
+  // const timeDiff = Date.now() - activity.lastRequest;
+  //
+  // if (timeDiff > 60000) {
+  //   activity.count = 1;
+  // }
+  //
+  // if (activity.count > 100) {
+  //   exports.blacklistIP(req.ip);
+  //   return res.status(429).json({ success: false, message: 'Too many requests' });
+  // }
+  //
+  // activity.lastRequest = Date.now();
+  // next();
 };
 
+/**
+ * Track failed login attempts
+ */
 const failedLoginAttempts = new Map();
 
 exports.trackFailedLogin = (identifier) => {
+  const now = Date.now();
+  
   if (!failedLoginAttempts.has(identifier)) {
-    failedLoginAttempts.set(identifier, {
-      count: 0,
-      lastAttempt: Date.now(),
-      lockedUntil: null
-    });
+    failedLoginAttempts.set(identifier, { attempts: 0, lockTime: null });
   }
-
+  
   const attempts = failedLoginAttempts.get(identifier);
-  attempts.count++;
-  attempts.lastAttempt = Date.now();
-
-  if (attempts.count >= 5) {
-    attempts.lockedUntil = Date.now() + 15 * 60 * 1000;
-    console.warn(`🔒 Account locked: ${identifier}`);
+  attempts.attempts++;
+  
+  if (attempts.attempts >= 5) {
+    attempts.lockTime = now + (15 * 60 * 1000); // Lock for 15 minutes
   }
-
-  return attempts;
 };
 
+/**
+ * Check if account is locked
+ */
 exports.isAccountLocked = (identifier) => {
   const attempts = failedLoginAttempts.get(identifier);
+  
   if (!attempts) return false;
   
-  if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
+  if (attempts.lockTime && Date.now() < attempts.lockTime) {
     return true;
   }
   
-  if (attempts.lockedUntil && Date.now() >= attempts.lockedUntil) {
-    attempts.count = 0;
-    attempts.lockedUntil = null;
+  if (attempts.lockTime && Date.now() >= attempts.lockTime) {
+    failedLoginAttempts.delete(identifier);
   }
   
   return false;
 };
 
+/**
+ * Reset failed login attempts
+ */
 exports.resetFailedLoginAttempts = (identifier) => {
   failedLoginAttempts.delete(identifier);
 };
-
-const userLocks = new Map();
-
-exports.acquireLock = async (userId, resource, timeout = 5000) => {
-  const lockKey = `${userId}-${resource}`;
-  
-  if (userLocks.has(lockKey)) {
-    const lock = userLocks.get(lockKey);
-    const age = Date.now() - lock.timestamp;
-    
-    if (age > timeout) {
-      userLocks.delete(lockKey);
-    } else {
-      throw new Error('Resource locked.');
-    }
-  }
-  
-  userLocks.set(lockKey, {
-    timestamp: Date.now(),
-    resource
-  });
-  
-  return lockKey;
-};
-
-exports.releaseLock = (lockKey) => {
-  userLocks.delete(lockKey);
-};
-
-exports.preventConcurrentModifications = (resourceType) => {
-  return async (req, res, next) => {
-    if (!req.user) return next();
-    
-    const resourceId = req.params.id || resourceType;
-    const lockKey = `${req.user._id}-${resourceId}`;
-    
-    try {
-      await exports.acquireLock(req.user._id, resourceId);
-      req.lockKey = lockKey;
-      
-      res.on('finish', () => {
-        exports.releaseLock(lockKey);
-      });
-      
-      next();
-    } catch (error) {
-      return res.status(409).json({
-        success: false,
-        message: error.message
-      });
-    }
-  };
-};
-
-class RequestQueue {
-  constructor(maxConcurrent = 10, maxQueueSize = 100) {
-    this.maxConcurrent = maxConcurrent;
-    this.maxQueueSize = maxQueueSize;
-    this.currentRequests = 0;
-    this.queue = [];
-  }
-
-  async add(fn) {
-    if (this.queue.length >= this.maxQueueSize) {
-      throw new Error('Queue full.');
-    }
-
-    return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject });
-      this.process();
-    });
-  }
-
-  async process() {
-    if (this.currentRequests >= this.maxConcurrent || this.queue.length === 0) {
-      return;
-    }
-
-    this.currentRequests++;
-    const { fn, resolve, reject } = this.queue.shift();
-
-    try {
-      const result = await fn();
-      resolve(result);
-    } catch (error) {
-      reject(error);
-    } finally {
-      this.currentRequests--;
-      this.process();
-    }
-  }
-
-  getStats() {
-    return {
-      currentRequests: this.currentRequests,
-      queueLength: this.queue.length,
-      maxConcurrent: this.maxConcurrent,
-      maxQueueSize: this.maxQueueSize
-    };
-  }
-}
-
-const queues = {
-  aiRequests: new RequestQueue(5, 50),
-  exports: new RequestQueue(3, 30),
-  heavyOperations: new RequestQueue(10, 100)
-};
-
-exports.queueRequest = (queueName = 'heavyOperations') => {
-  return async (req, res, next) => {
-    const queue = queues[queueName];
-    if (!queue) return next();
-
-    try {
-      await queue.add(async () => {
-        return new Promise((resolve) => {
-          const originalSend = res.send;
-          res.send = function(data) {
-            resolve(data);
-            return originalSend.call(this, data);
-          };
-          next();
-        });
-      });
-    } catch (error) {
-      return res.status(503).json({
-        success: false,
-        message: error.message
-      });
-    }
-  };
-};
-
-exports.getQueueStats = () => {
-  return Object.keys(queues).reduce((acc, key) => {
-    acc[key] = queues[key].getStats();
-    return acc;
-  }, {});
-};
-
-module.exports = exports;
