@@ -1,95 +1,189 @@
-const aiService = require('../services/aiService');
+// backend/controllers/aiController.js
+
 const Transaction = require('../models/Transaction');
 const Budget = require('../models/Budget');
 const Goal = require('../models/Goal');
-const analyticsService = require('../services/analyticsService');
+const { startOfMonth, endOfMonth, subMonths } = require('date-fns');
 
-// @desc    Chat with AI assistant
-// @route   POST /api/ai/chat
+// @desc    Get comprehensive AI financial insights
+// @route   GET /api/ai/insights
 // @access  Private
-exports.chat = async (req, res, next) => {
+exports.getFinancialInsights = async (req, res, next) => {
   try {
-    const { message, conversationHistory } = req.body;
+    const userId = req.user._id;
 
-    if (!message || message.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Message is required'
-      });
-    }
-
-    const response = await aiService.chatWithAI(message, conversationHistory);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        message: response,
-        timestamp: new Date()
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Analyze spending patterns with AI
-// @route   GET /api/ai/analyze-spending
-// @access  Private
-exports.analyzeSpending = async (req, res, next) => {
-  try {
-    const { period = 'month' } = req.query;
-
-    // Get date range
-    const now = new Date();
-    let startDate;
-    
-    switch (period) {
-      case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
-        break;
-      case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
-        break;
-      case 'quarter':
-        startDate = new Date(now.setMonth(now.getMonth() - 3));
-        break;
-      case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
-        break;
-      default:
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
-    }
-
-    const endDate = new Date();
-
-    // Get transactions and budgets
-    const [transactions, budgets] = await Promise.all([
-      Transaction.find({
-        user: req.user._id,
-        date: { $gte: startDate, $lte: endDate }
-      }).populate('category').lean(),
-      Budget.find({ user: req.user._id }).populate('category').lean()
-    ]);
+    // Get last 3 months of transactions
+    const threeMonthsAgo = subMonths(new Date(), 3);
+    const transactions = await Transaction.find({
+      userId,
+      date: { $gte: threeMonthsAgo }
+    }).sort('-date');
 
     if (transactions.length === 0) {
-      return res.status(200).json({
+      return res.json({
         success: true,
-        message: 'No transactions found for analysis',
         data: {
-          analysis: 'You need to add some transactions first before I can analyze your spending patterns.'
+          insights: [],
+          recommendations: ['Start tracking your transactions to get personalized insights'],
+          spendingPatterns: {},
+          alerts: []
         }
       });
     }
 
-    const analysis = await aiService.analyzeSpending(transactions, budgets);
+    // Calculate basic stats
+    const expenses = transactions.filter((t) => t.type === 'expense');
+    const income = transactions.filter((t) => t.type === 'income');
 
-    res.status(200).json({
+    const totalExpense = expenses.reduce((sum, t) => sum + t.amount, 0);
+    const totalIncome = income.reduce((sum, t) => sum + t.amount, 0);
+    const avgMonthlyExpense = totalExpense / 3;
+    const avgMonthlyIncome = totalIncome / 3;
+
+    // Category breakdown
+    const categorySpending = {};
+    expenses.forEach((t) => {
+      categorySpending[t.category] = (categorySpending[t.category] || 0) + t.amount;
+    });
+
+    // Find top spending categories
+    const topCategories = Object.entries(categorySpending)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([cat, amount]) => ({
+        category: cat,
+        amount,
+        percentage: ((amount / totalExpense) * 100).toFixed(1)
+      }));
+
+    // Generate insights
+    const insights = [];
+    const recommendations = [];
+    const alerts = [];
+
+    // Insight 1: Spending vs Income
+    const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
+    insights.push({
+      type: 'savings-rate',
+      title: 'Savings Rate',
+      message: `You're saving ${savingsRate.toFixed(1)}% of your income`,
+      value: savingsRate.toFixed(1),
+      status: savingsRate >= 20 ? 'good' : savingsRate >= 10 ? 'fair' : 'poor'
+    });
+
+    if (savingsRate < 20) {
+      recommendations.push(
+        `Try to increase your savings rate to at least 20%. Currently at ${savingsRate.toFixed(1)}%`
+      );
+    }
+
+    // Insight 2: Top spending category
+    if (topCategories.length > 0) {
+      const topCategory = topCategories[0];
+      insights.push({
+        type: 'top-spending',
+        title: 'Highest Spending Category',
+        message: `${topCategory.category} accounts for ${topCategory.percentage}% of your expenses`,
+        category: topCategory.category,
+        amount: topCategory.amount,
+        percentage: topCategory.percentage
+      });
+
+      if (parseFloat(topCategory.percentage) > 40) {
+        alerts.push({
+          severity: 'warning',
+          message: `${topCategory.category} takes up ${topCategory.percentage}% of your spending. Consider reducing expenses in this area.`
+        });
+      }
+    }
+
+    // Insight 3: Spending trend
+    const currentMonth = new Date();
+    const lastMonth = subMonths(currentMonth, 1);
+
+    const currentMonthExpenses = expenses.filter(
+      (t) => t.date >= startOfMonth(currentMonth) && t.date <= endOfMonth(currentMonth)
+    );
+
+    const lastMonthExpenses = expenses.filter(
+      (t) => t.date >= startOfMonth(lastMonth) && t.date <= endOfMonth(lastMonth)
+    );
+
+    const currentMonthTotal = currentMonthExpenses.reduce((sum, t) => sum + t.amount, 0);
+    const lastMonthTotal = lastMonthExpenses.reduce((sum, t) => sum + t.amount, 0);
+
+    if (lastMonthTotal > 0) {
+      const percentageChange = ((currentMonthTotal - lastMonthTotal) / lastMonthTotal) * 100;
+
+      insights.push({
+        type: 'spending-trend',
+        title: 'Monthly Spending Trend',
+        message:
+          percentageChange > 0
+            ? `Your spending increased by ${percentageChange.toFixed(1)}% this month`
+            : `Your spending decreased by ${Math.abs(percentageChange).toFixed(1)}% this month`,
+        change: percentageChange.toFixed(1),
+        status: percentageChange > 10 ? 'warning' : percentageChange < -10 ? 'good' : 'neutral'
+      });
+
+      if (percentageChange > 20) {
+        alerts.push({
+          severity: 'warning',
+          message: `Your spending has increased significantly (${percentageChange.toFixed(
+            1
+          )}%) compared to last month`
+        });
+      }
+    }
+
+    // Get budget alerts
+    const budgets = await Budget.find({ userId, isActive: true });
+    for (const budget of budgets) {
+      const percentageUsed = (budget.spent / budget.amount) * 100;
+      if (percentageUsed >= 80) {
+        alerts.push({
+          severity: percentageUsed >= 100 ? 'critical' : 'warning',
+          message: `You've used ${percentageUsed.toFixed(1)}% of your ${
+            budget.category
+          } budget`,
+          budgetId: budget._id
+        });
+      }
+    }
+
+    // Add general recommendations
+    recommendations.push('Track all your expenses consistently for better insights');
+
+    if (avgMonthlyExpense > avgMonthlyIncome) {
+      recommendations.push('Your expenses exceed your income. Consider ways to increase income or reduce spending');
+    }
+
+    if (topCategories.length > 0 && parseFloat(topCategories[0].percentage) > 30) {
+      recommendations.push(
+        `Review your ${topCategories[0].category} expenses - they represent a large portion of your spending`
+      );
+    }
+
+    // Spending patterns
+    const spendingPatterns = {
+      averageMonthlyExpense: avgMonthlyExpense.toFixed(2),
+      averageMonthlyIncome: avgMonthlyIncome.toFixed(2),
+      topCategories,
+      transactionCount: transactions.length,
+      mostFrequentCategory: topCategories.length > 0 ? topCategories[0].category : 'None'
+    };
+
+    res.json({
       success: true,
       data: {
-        period,
-        transactionCount: transactions.length,
-        analysis,
-        generatedAt: new Date()
+        insights,
+        recommendations,
+        spendingPatterns,
+        alerts,
+        period: {
+          from: threeMonthsAgo.toISOString(),
+          to: new Date().toISOString()
+        }
       }
     });
   } catch (error) {
@@ -97,132 +191,209 @@ exports.analyzeSpending = async (req, res, next) => {
   }
 };
 
-// @desc    Get budget recommendations from AI
-// @route   POST /api/ai/budget-recommendations
+// @desc    Predict future spending
+// @route   GET /api/ai/predict-spending
+// @access  Private
+exports.getSpendingPrediction = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const { category, months = 1 } = req.query;
+
+    // Get last 6 months of data
+    const sixMonthsAgo = subMonths(new Date(), 6);
+    const query = {
+      userId,
+      type: 'expense',
+      date: { $gte: sixMonthsAgo }
+    };
+
+    if (category) {
+      query.category = category;
+    }
+
+    const transactions = await Transaction.find(query);
+
+    if (transactions.length < 10) {
+      return res.json({
+        success: true,
+        data: {
+          prediction: null,
+          message: 'Not enough data for accurate prediction. Need at least 10 transactions.'
+        }
+      });
+    }
+
+    // Simple moving average prediction
+    const total = transactions.reduce((sum, t) => sum + t.amount, 0);
+    const average = total / 6; // 6 months average
+
+    const prediction = average * parseInt(months);
+
+    res.json({
+      success: true,
+      data: {
+        prediction: prediction.toFixed(2),
+        period: `${months} month(s)`,
+        confidence: 'medium',
+        basedOn: `${transactions.length} transactions from the last 6 months`,
+        category: category || 'All categories'
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Suggest category for transaction
+// @route   POST /api/ai/suggest-category
+// @access  Private
+exports.getCategorySuggestions = async (req, res, next) => {
+  try {
+    const { description, amount } = req.body;
+
+    if (!description) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a description'
+      });
+    }
+
+    // Simple keyword-based categorization
+    const categoryKeywords = {
+      Food: ['grocery', 'restaurant', 'food', 'coffee', 'lunch', 'dinner', 'breakfast', 'cafe'],
+      Transportation: ['uber', 'taxi', 'gas', 'fuel', 'metro', 'bus', 'train', 'parking'],
+      Entertainment: ['movie', 'concert', 'game', 'netflix', 'spotify', 'youtube'],
+      Shopping: ['amazon', 'store', 'mall', 'shopping', 'clothes', 'shoes'],
+      Utilities: ['electric', 'water', 'internet', 'phone', 'bill'],
+      Healthcare: ['doctor', 'medicine', 'pharmacy', 'hospital', 'clinic'],
+      Housing: ['rent', 'mortgage', 'lease']
+    };
+
+    const lowerDesc = description.toLowerCase();
+    const suggestions = [];
+
+    for (const [category, keywords] of Object.entries(categoryKeywords)) {
+      const matchCount = keywords.filter((keyword) => lowerDesc.includes(keyword)).length;
+      if (matchCount > 0) {
+        suggestions.push({
+          category,
+          confidence: matchCount / keywords.length,
+          matchedKeywords: keywords.filter((keyword) => lowerDesc.includes(keyword))
+        });
+      }
+    }
+
+    // Sort by confidence
+    suggestions.sort((a, b) => b.confidence - a.confidence);
+
+    res.json({
+      success: true,
+      data: {
+        suggestions: suggestions.slice(0, 3),
+        topSuggestion: suggestions.length > 0 ? suggestions[0].category : 'Other'
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get budget recommendations
+// @route   GET /api/ai/budget-recommendations
 // @access  Private
 exports.getBudgetRecommendations = async (req, res, next) => {
   try {
-    const { monthlyIncome, period = 'month' } = req.body;
+    const userId = req.user._id;
 
-    if (!monthlyIncome || monthlyIncome <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid monthly income is required'
+    // Get last 3 months of expenses
+    const threeMonthsAgo = subMonths(new Date(), 3);
+    const expenses = await Transaction.find({
+      userId,
+      type: 'expense',
+      date: { $gte: threeMonthsAgo }
+    });
+
+    // Calculate average spending per category
+    const categorySpending = {};
+    expenses.forEach((t) => {
+      categorySpending[t.category] = (categorySpending[t.category] || 0) + t.amount;
+    });
+
+    const recommendations = [];
+
+    for (const [category, total] of Object.entries(categorySpending)) {
+      const average = total / 3;
+      const recommendedBudget = Math.ceil(average * 1.1); // 10% buffer
+
+      recommendations.push({
+        category,
+        recommendedAmount: recommendedBudget,
+        averageSpending: average.toFixed(2),
+        reasoning: `Based on your average ${category} spending of $${average.toFixed(2)}/month`
       });
     }
 
-    // Get spending data
-    const now = new Date();
-    const startDate = new Date(now.setMonth(now.getMonth() - 1));
-    const endDate = new Date();
+    // Sort by spending
+    recommendations.sort((a, b) => b.recommendedAmount - a.recommendedAmount);
 
-    const overview = await analyticsService.getSpendingOverview(
-      req.user._id,
-      startDate,
-      endDate
-    );
-
-    const categoryBreakdown = await analyticsService.getCategoryBreakdown(
-      req.user._id,
-      startDate,
-      endDate,
-      'expense'
-    );
-
-    const recommendations = await aiService.generateBudgetRecommendations(
-      monthlyIncome,
-      overview.totalExpenses,
-      categoryBreakdown
-    );
-
-    res.status(200).json({
+    res.json({
       success: true,
-      data: {
-        monthlyIncome,
-        currentExpenses: overview.totalExpenses,
-        savingsRate: overview.savingsRate,
-        recommendations,
-        generatedAt: new Date()
-      }
+      data: { recommendations }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Generate savings plan
-// @route   POST /api/ai/savings-plan
+// @desc    Detect spending anomalies
+// @route   GET /api/ai/anomaly-detection
 // @access  Private
-exports.generateSavingsPlan = async (req, res, next) => {
+exports.getAnomalyDetection = async (req, res, next) => {
   try {
-    const { currentSavings, goalAmount, timeframe, monthlyIncome } = req.body;
+    const userId = req.user._id;
 
-    if (!goalAmount || !timeframe || !monthlyIncome) {
-      return res.status(400).json({
-        success: false,
-        message: 'Goal amount, timeframe, and monthly income are required'
-      });
-    }
-
-    const plan = await aiService.generateSavingsPlan(
-      currentSavings || 0,
-      goalAmount,
-      timeframe,
-      monthlyIncome
-    );
-
-    res.status(200).json({
-      success: true,
-      data: {
-        currentSavings: currentSavings || 0,
-        goalAmount,
-        timeframe,
-        monthlyIncome,
-        plan,
-        generatedAt: new Date()
-      }
+    // Get last 3 months
+    const threeMonthsAgo = subMonths(new Date(), 3);
+    const transactions = await Transaction.find({
+      userId,
+      type: 'expense',
+      date: { $gte: threeMonthsAgo }
     });
-  } catch (error) {
-    next(error);
-  }
-};
 
-// @desc    Predict future expenses
-// @route   GET /api/ai/predict-expenses
-// @access  Private
-exports.predictExpenses = async (req, res, next) => {
-  try {
-    const { months = 3 } = req.query;
-
-    // Get last 6 months of data
-    const now = new Date();
-    const startDate = new Date(now.setMonth(now.getMonth() - 6));
-    const endDate = new Date();
-
-    const monthlyData = await analyticsService.getMonthlyComparison(
-      req.user._id,
-      6
-    );
-
-    if (monthlyData.length === 0) {
-      return res.status(200).json({
+    if (transactions.length < 10) {
+      return res.json({
         success: true,
-        message: 'Not enough historical data for predictions',
-        data: {
-          predictions: 'Add more transactions to get expense predictions.'
+        data: { anomalies: [], message: 'Not enough data for anomaly detection' }
+      });
+    }
+
+    // Calculate average and standard deviation
+    const amounts = transactions.map((t) => t.amount);
+    const avg = amounts.reduce((sum, a) => sum + a, 0) / amounts.length;
+    const variance =
+      amounts.reduce((sum, a) => sum + Math.pow(a - avg, 2), 0) / amounts.length;
+    const stdDev = Math.sqrt(variance);
+
+    // Find anomalies (transactions > 2 standard deviations from mean)
+    const anomalies = transactions
+      .filter((t) => Math.abs(t.amount - avg) > 2 * stdDev)
+      .map((t) => ({
+        transaction: t,
+        deviation: ((t.amount - avg) / stdDev).toFixed(2),
+        reason: `This ${t.category} expense of $${t.amount} is unusually ${
+          t.amount > avg ? 'high' : 'low'
+        }`
+      }));
+
+    res.json({
+      success: true,
+      data: {
+        anomalies,
+        stats: {
+          average: avg.toFixed(2),
+          standardDeviation: stdDev.toFixed(2),
+          analyzed: transactions.length
         }
-      });
-    }
-
-    const predictions = await aiService.predictExpenses(monthlyData, parseInt(months));
-
-    res.status(200).json({
-      success: true,
-      data: {
-        historicalMonths: monthlyData.length,
-        predictionMonths: parseInt(months),
-        predictions,
-        generatedAt: new Date()
       }
     });
   } catch (error) {
@@ -230,161 +401,100 @@ exports.predictExpenses = async (req, res, next) => {
   }
 };
 
-// @desc    Generate debt payoff plan
-// @route   POST /api/ai/debt-payoff
+// @desc    Get personalized savings tips
+// @route   GET /api/ai/savings-tips
 // @access  Private
-exports.generateDebtPayoff = async (req, res, next) => {
+exports.getSavingsTips = async (req, res, next) => {
   try {
-    const { debts, monthlyIncome, monthlyExpenses } = req.body;
+    const userId = req.user._id;
 
-    if (!debts || !Array.isArray(debts) || debts.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Debts array is required'
-      });
-    }
-
-    if (!monthlyIncome || !monthlyExpenses) {
-      return res.status(400).json({
-        success: false,
-        message: 'Monthly income and expenses are required'
-      });
-    }
-
-    const plan = await aiService.generateDebtPayoffPlan(
-      debts,
-      monthlyIncome,
-      monthlyExpenses
-    );
-
-    res.status(200).json({
-      success: true,
-      data: {
-        totalDebt: debts.reduce((sum, d) => sum + d.amount, 0),
-        debtCount: debts.length,
-        availableForDebt: monthlyIncome - monthlyExpenses,
-        plan,
-        generatedAt: new Date()
-      }
+    // Get recent transactions and budgets
+    const oneMonthAgo = subMonths(new Date(), 1);
+    const transactions = await Transaction.find({
+      userId,
+      date: { $gte: oneMonthAgo }
     });
-  } catch (error) {
-    next(error);
-  }
-};
 
-// @desc    Get investment advice
-// @route   POST /api/ai/investment-advice
-// @access  Private
-exports.getInvestmentAdvice = async (req, res, next) => {
-  try {
-    const { age, riskTolerance, savingsAmount, goals } = req.body;
+    const budgets = await Budget.find({ userId, isActive: true });
+    const goals = await Goal.find({ userId, status: { $ne: 'completed' } });
 
-    if (!age || !riskTolerance || !savingsAmount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Age, risk tolerance, and savings amount are required'
-      });
+    const tips = [];
+
+    // Analyze spending patterns
+    const expenses = transactions.filter((t) => t.type === 'expense');
+    const income = transactions.filter((t) => t.type === 'income');
+
+    const totalExpense = expenses.reduce((sum, t) => sum + t.amount, 0);
+    const totalIncome = income.reduce((sum, t) => sum + t.amount, 0);
+
+    // Tip 1: Based on savings rate
+    if (totalIncome > 0) {
+      const savingsRate = ((totalIncome - totalExpense) / totalIncome) * 100;
+      if (savingsRate < 20) {
+        tips.push({
+          category: 'savings',
+          priority: 'high',
+          tip: 'Increase your savings rate',
+          description: `You're currently saving ${savingsRate.toFixed(
+            1
+          )}%. Try to reach at least 20% by reducing unnecessary expenses.`,
+          potentialSavings: ((totalIncome * 0.2 - (totalIncome - totalExpense))).toFixed(2)
+        });
+      }
     }
 
-    const advice = await aiService.getInvestmentAdvice(
-      age,
-      riskTolerance,
-      savingsAmount,
-      goals || []
-    );
-
-    res.status(200).json({
-      success: true,
-      data: {
-        advice,
-        disclaimer: 'This is general information only and not professional financial advice. Consult with a licensed financial advisor.',
-        generatedAt: new Date()
+    // Tip 2: Budget optimization
+    for (const budget of budgets) {
+      const percentageUsed = (budget.spent / budget.amount) * 100;
+      if (percentageUsed > 90) {
+        tips.push({
+          category: 'budget',
+          priority: 'high',
+          tip: `Reduce ${budget.category} spending`,
+          description: `You've used ${percentageUsed.toFixed(1)}% of your ${
+            budget.category
+          } budget. Consider cutting back.`
+        });
       }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get tax optimization tips
-// @route   POST /api/ai/tax-tips
-// @access  Private
-exports.getTaxTips = async (req, res, next) => {
-  try {
-    const { annualIncome, deductions, investments } = req.body;
-
-    if (!annualIncome) {
-      return res.status(400).json({
-        success: false,
-        message: 'Annual income is required'
-      });
     }
 
-    const tips = await aiService.getTaxOptimizationTips(
-      annualIncome,
-      deductions || [],
-      investments || []
-    );
+    // Tip 3: Goal-based savings
+    if (goals.length > 0) {
+      const totalGoalAmount = goals.reduce((sum, g) => g.targetAmount - g.currentAmount, 0);
+      const monthsToDeadline = goals.reduce((min, g) => {
+        if (!g.deadline) return min;
+        const months = Math.floor(
+          (new Date(g.deadline) - new Date()) / (1000 * 60 * 60 * 24 * 30)
+        );
+        return months < min ? months : min;
+      }, Infinity);
 
-    res.status(200).json({
-      success: true,
-      data: {
-        tips,
-        disclaimer: 'This is general tax information only. Consult with a licensed tax professional.',
-        generatedAt: new Date()
+      if (monthsToDeadline !== Infinity && monthsToDeadline > 0) {
+        const monthlyRequired = totalGoalAmount / monthsToDeadline;
+        tips.push({
+          category: 'goals',
+          priority: 'medium',
+          tip: 'Stay on track with your goals',
+          description: `Save $${monthlyRequired.toFixed(
+            2
+          )}/month to reach your financial goals on time.`,
+          potentialSavings: monthlyRequired.toFixed(2)
+        });
       }
+    }
+
+    // General tips
+    tips.push({
+      category: 'general',
+      priority: 'low',
+      tip: 'Track every expense',
+      description: 'Consistent tracking helps identify saving opportunities you might miss.'
     });
-  } catch (error) {
-    next(error);
-  }
-};
 
-// @desc    Get financial health score
-// @route   GET /api/ai/financial-health
-// @access  Private
-exports.getFinancialHealth = async (req, res, next) => {
-  try {
-    const now = new Date();
-    const startDate = new Date(now.setMonth(now.getMonth() - 3));
-    const endDate = new Date();
-
-    const [overview, budgets, goals] = await Promise.all([
-      analyticsService.getSpendingOverview(req.user._id, startDate, endDate),
-      Budget.find({ user: req.user._id }).lean(),
-      Goal.find({ user: req.user._id }).lean()
-    ]);
-
-    const healthData = {
-      savingsRate: parseFloat(overview.savingsRate),
-      budgetAdherence: budgets.length,
-      activeGoals: goals.filter(g => g.status === 'active').length,
-      netSavings: overview.netSavings
-    };
-
-    const prompt = `
-Analyze this financial health data and provide a score (0-100) and assessment:
-
-${JSON.stringify(healthData)}
-
-Provide:
-1. Overall financial health score (0-100)
-2. Strengths
-3. Areas for improvement
-4. Specific action items
-5. Next steps
-
-Be encouraging but honest.
-`;
-
-    const assessment = await aiService.generateAIResponse(prompt, healthData);
-
-    res.status(200).json({
+    res.json({
       success: true,
-      data: {
-        metrics: healthData,
-        assessment,
-        generatedAt: new Date()
-      }
+      count: tips.length,
+      data: { tips }
     });
   } catch (error) {
     next(error);

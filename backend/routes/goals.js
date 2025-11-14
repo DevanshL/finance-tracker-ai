@@ -3,15 +3,13 @@ const router = express.Router();
 const {
   createGoal,
   getGoals,
-  getGoal,
+  getGoalById,           // Changed from getGoal
   updateGoal,
   deleteGoal,
-  updateGoalProgress,
-  getGoalProgress,
-  getActiveGoals,
-  getCompletedGoals,
-  getGoalStats,
-  getRecommendations
+  addContribution,       // Changed from contributeToGoal
+  // withdrawFromGoal,   // Not exported in controller
+  // updateGoalStatus,   // Not exported in controller
+  getGoalStats
 } = require('../controllers/goalController');
 const { protect } = require('../middleware/auth');
 
@@ -21,26 +19,21 @@ router.use(protect);
 // Stats route (must be before /:id routes)
 router.get('/stats', getGoalStats);
 
-// Get active/completed goals (must be before /:id routes)
-router.get('/status/active', getActiveGoals);
-router.get('/status/completed', getCompletedGoals);
-
 // Main CRUD routes
 router.route('/')
   .get(getGoals)
   .post(createGoal);
 
-// Single goal routes
 router.route('/:id')
-  .get(getGoal)
+  .get(getGoalById)      // Changed from getGoal
   .put(updateGoal)
   .delete(deleteGoal);
 
-// Goal progress routes
-router.patch('/:id/progress', updateGoalProgress);
-router.get('/:id/progress', getGoalProgress);
+// Additional actions
+router.post('/:id/contribute', addContribution);  // Changed from contributeToGoal
 
-// Recommendations
-router.get('/recommendations/smart', getRecommendations);
+// Comment out these routes as functions don't exist in controller
+// router.post('/:id/withdraw', withdrawFromGoal);
+// router.patch('/:id/status', updateGoalStatus);
 
 module.exports = router;

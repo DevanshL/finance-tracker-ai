@@ -11,13 +11,14 @@ const {
   getTransactionSummary,
   getRecentTransactions,
   exportTransactions,
-  importTransactions
+  // importTransactions  // Comment this out
 } = require('../controllers/transactionController');
 
+// Fix the import names to match the actual exports
 const {
-  createBulkTransactions,
-  deleteBulkTransactions,
-  updateBulkTransactions
+  bulkCreate,        // Changed from createBulkTransactions
+  bulkDelete,        // Changed from deleteBulkTransactions
+  bulkUpdate         // Changed from updateBulkTransactions
 } = require('../controllers/bulkController');
 
 // Import middleware
@@ -37,12 +38,12 @@ router.use(protect);
 router.get('/summary', getTransactionSummary);
 router.get('/recent', getRecentTransactions);
 router.get('/export', exportTransactions);
-router.post('/import', importTransactions);
+// router.post('/import', importTransactions);  // Comment this out
 
 // Bulk operations - MUST be before /:id
-router.post('/bulk', createBulkTransactions);
-router.put('/bulk', updateBulkTransactions);
-router.delete('/bulk', deleteBulkTransactions);
+router.post('/bulk', bulkCreate);        // Changed from createBulkTransactions
+router.put('/bulk', bulkUpdate);         // Changed from updateBulkTransactions
+router.delete('/bulk', bulkDelete);      // Changed from deleteBulkTransactions
 
 // Main CRUD routes (/:id must be last!)
 router.route('/')

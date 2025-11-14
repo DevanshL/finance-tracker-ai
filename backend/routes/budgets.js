@@ -1,40 +1,42 @@
 const express = require('express');
 const router = express.Router();
+
+// Import controllers
 const {
   getBudgets,
-  getBudget,
+  getBudgetById,      // Changed from getBudget
   createBudget,
   updateBudget,
   deleteBudget,
-  getBudgetByCategory,
-  getAnalytics,
-  getMonthlyAnalytics,
-  getBudgetAlerts
+  getBudgetAlerts,
+  getBudgetStatus     
 } = require('../controllers/budgetController');
+
+// Import middleware
 const { protect } = require('../middleware/auth');
+const {
+  budgetValidation,
+  idValidation,
+  paginationValidation
+} = require('../middleware/validator');
 
 // All routes require authentication
 router.use(protect);
 
-// Main routes
+// Special routes (must come before /:id)
+router.get('/alerts', getBudgetAlerts);
+
+// Main CRUD routes
 router.route('/')
-  .get(getBudgets)
-  .post(createBudget);
+  .get(paginationValidation, getBudgets)
+  .post(budgetValidation, createBudget);
 
-// Single budget routes
 router.route('/:id')
-  .get(getBudget)
-  .put(updateBudget)
-  .delete(deleteBudget);
+  .get(idValidation, getBudgetById)        // Changed from getBudget
+  .put(idValidation, updateBudget)
+  .delete(idValidation, deleteBudget);
 
-// Budget by category
-router.get('/category/:category', getBudgetByCategory);
-
-// Budget analytics
-router.get('/analytics/monthly', getMonthlyAnalytics);
-router.get('/analytics/:period', getAnalytics);
-
-// Budget alerts
-router.get('/alerts/all', getBudgetAlerts);
+// Status endpoint
+router.get('/:id/status', idValidation, getBudgetStatus);
 
 module.exports = router;

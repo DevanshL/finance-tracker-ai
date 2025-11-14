@@ -1,589 +1,195 @@
-const Joi = require('joi');
+const { body, param, query, validationResult } = require('express-validator');
+const { HTTP_STATUS } = require('../config/constants');
 
-// ==============================================
-// VALIDATION SCHEMAS
-// ==============================================
-
-// User Registration
-exports.registerSchema = Joi.object({
-  name: Joi.string()
-    .min(2)
-    .max(50)
-    .required()
-    .trim()
-    .messages({
-      'string.min': 'Name must be at least 2 characters',
-      'string.max': 'Name cannot exceed 50 characters',
-      'any.required': 'Name is required'
-    }),
+// Validate Request
+const validate = (req, res, next) => {
+  const errors = validationResult(req);
   
-  email: Joi.string()
-    .email()
-    .required()
-    .lowercase()
-    .trim()
-    .messages({
-      'string.email': 'Please provide a valid email',
-      'any.required': 'Email is required'
-    }),
-  
-  password: Joi.string()
-    .min(8)
-    .max(128)
-    .required()
-    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .messages({
-      'string.min': 'Password must be at least 8 characters',
-      'string.max': 'Password cannot exceed 128 characters',
-      'string.pattern.base': 'Password must contain uppercase, lowercase, number, and special character',
-      'any.required': 'Password is required'
-    })
-});
-
-// User Login
-exports.loginSchema = Joi.object({
-  email: Joi.string()
-    .email()
-    .required()
-    .lowercase()
-    .trim(),
-  
-  password: Joi.string()
-    .required()
-});
-
-// Transaction
-exports.transactionSchema = Joi.object({
-  description: Joi.string()
-    .min(1)
-    .max(200)
-    .required()
-    .trim(),
-  
-  amount: Joi.number()
-    .positive()
-    .max(1000000000)
-    .required()
-    .messages({
-      'number.positive': 'Amount must be positive',
-      'number.max': 'Amount is too large'
-    }),
-  
-  type: Joi.string()
-    .valid('income', 'expense')
-    .required(),
-  
-  category: Joi.string()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required()
-    .messages({
-      'string.pattern.base': 'Invalid category ID'
-    }),
-  
-  date: Joi.date()
-    .max('now')
-    .required()
-    .messages({
-      'date.max': 'Transaction date cannot be in the future'
-    }),
-  
-  paymentMethod: Joi.string()
-    .valid('cash', 'credit_card', 'debit_card', 'bank_transfer', 'digital_wallet', 'other')
-    .optional(),
-  
-  notes: Joi.string()
-    .max(500)
-    .optional()
-    .trim()
-});
-
-// Budget
-exports.budgetSchema = Joi.object({
-  amount: Joi.number()
-    .positive()
-    .max(1000000000)
-    .required(),
-  
-  category: Joi.string()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required(),
-  
-  period: Joi.string()
-    .valid('weekly', 'biweekly', 'monthly', 'quarterly', 'yearly')
-    .required(),
-  
-  startDate: Joi.date()
-    .required(),
-  
-  endDate: Joi.date()
-    .greater(Joi.ref('startDate'))
-    .required()
-    .messages({
-      'date.greater': 'End date must be after start date'
-    }),
-  
-  alertThreshold: Joi.number()
-    .min(50)
-    .max(100)
-    .optional()
-});
-
-// Goal
-exports.goalSchema = Joi.object({
-  name: Joi.string()
-    .min(2)
-    .max(100)
-    .required()
-    .trim(),
-  
-  description: Joi.string()
-    .max(500)
-    .optional()
-    .trim(),
-  
-  targetAmount: Joi.number()
-    .positive()
-    .max(1000000000)
-    .required(),
-  
-  currentAmount: Joi.number()
-    .min(0)
-    .max(Joi.ref('targetAmount'))
-    .optional()
-    .default(0),
-  
-  targetDate: Joi.date()
-    .greater('now')
-    .required()
-    .messages({
-      'date.greater': 'Target date must be in the future'
-    }),
-  
-  priority: Joi.string()
-    .valid('low', 'medium', 'high')
-    .optional()
-    .default('medium')
-});
-
-// Category
-exports.categorySchema = Joi.object({
-  name: Joi.string()
-    .min(2)
-    .max(50)
-    .required()
-    .trim(),
-  
-  type: Joi.string()
-    .valid('income', 'expense', 'both')
-    .required(),
-  
-  icon: Joi.string()
-    .max(50)
-    .optional(),
-  
-  color: Joi.string()
-    .pattern(/^#[0-9A-Fa-f]{6}$/)
-    .optional()
-    .messages({
-      'string.pattern.base': 'Color must be a valid hex code (e.g., #FF5733)'
-    })
-});
-
-// Recurring Transaction
-exports.recurringTransactionSchema = Joi.object({
-  description: Joi.string()
-    .min(1)
-    .max(200)
-    .required()
-    .trim(),
-  
-  amount: Joi.number()
-    .positive()
-    .max(1000000000)
-    .required(),
-  
-  type: Joi.string()
-    .valid('income', 'expense')
-    .required(),
-  
-  category: Joi.string()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required(),
-  
-  frequency: Joi.string()
-    .valid('daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly')
-    .required(),
-  
-  startDate: Joi.date()
-    .required(),
-  
-  endDate: Joi.date()
-    .greater(Joi.ref('startDate'))
-    .optional(),
-  
-  isActive: Joi.boolean()
-    .optional()
-    .default(true),
-  
-  autoProcess: Joi.boolean()
-    .optional()
-    .default(false)
-});
-
-// Report
-exports.reportSchema = Joi.object({
-  name: Joi.string()
-    .min(2)
-    .max(100)
-    .required()
-    .trim(),
-  
-  type: Joi.string()
-    .valid('spending', 'income', 'budget', 'goal', 'comprehensive')
-    .required(),
-  
-  period: Joi.string()
-    .valid('weekly', 'monthly', 'quarterly', 'yearly', 'custom')
-    .required(),
-  
-  startDate: Joi.date()
-    .required(),
-  
-  endDate: Joi.date()
-    .greater(Joi.ref('startDate'))
-    .required(),
-  
-  scheduled: Joi.boolean()
-    .optional()
-    .default(false),
-  
-  frequency: Joi.string()
-    .valid('daily', 'weekly', 'monthly', 'quarterly', 'yearly')
-    .when('scheduled', {
-      is: true,
-      then: Joi.required(),
-      otherwise: Joi.optional()
-    })
-});
-
-// Notification
-exports.notificationSchema = Joi.object({
-  type: Joi.string()
-    .valid(
-      'budget_alert',
-      'budget_exceeded',
-      'goal_achieved',
-      'goal_reminder',
-      'recurring_processed',
-      'recurring_failed',
-      'report_generated',
-      'unusual_spending',
-      'low_balance',
-      'bill_reminder',
-      'system'
-    )
-    .required(),
-  
-  priority: Joi.string()
-    .valid('low', 'medium', 'high', 'urgent')
-    .optional()
-    .default('medium'),
-  
-  title: Joi.string()
-    .min(1)
-    .max(100)
-    .required()
-    .trim(),
-  
-  message: Joi.string()
-    .min(1)
-    .max(500)
-    .required()
-    .trim()
-});
-
-// Settings
-exports.settingsSchema = Joi.object({
-  display: Joi.object({
-    currency: Joi.string()
-      .valid('USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR', 'CNY', 'BRL', 'MXN')
-      .optional(),
-    
-    language: Joi.string()
-      .valid('en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'zh', 'hi', 'ar')
-      .optional(),
-    
-    theme: Joi.string()
-      .valid('light', 'dark', 'auto')
-      .optional()
-  }).optional(),
-  
-  notifications: Joi.object({
-    email: Joi.object({
-      enabled: Joi.boolean().optional(),
-      budgetAlerts: Joi.boolean().optional(),
-      goalReminders: Joi.boolean().optional()
-    }).optional(),
-    
-    push: Joi.object({
-      enabled: Joi.boolean().optional()
-    }).optional()
-  }).optional()
-});
-
-// ==============================================
-// VALIDATION MIDDLEWARE
-// ==============================================
-
-exports.validate = (schema) => {
-  return (req, res, next) => {
-    const { error, value } = schema.validate(req.body, {
-      abortEarly: false, // Return all errors
-      stripUnknown: true // Remove unknown fields
-    });
-
-    if (error) {
-      const errors = error.details.map(detail => ({
-        field: detail.path.join('.'),
-        message: detail.message
-      }));
-
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors
-      });
-    }
-
-    // Replace req.body with validated value
-    req.body = value;
-    next();
-  };
-};
-
-// Specific validation middleware for auth routes
-exports.registerValidation = (req, res, next) => {
-  const { error, value } = exports.registerSchema.validate(req.body, {
-    abortEarly: false,
-    stripUnknown: true
-  });
-
-  if (error) {
-    const errors = error.details.map(detail => ({
-      field: detail.path.join('.'),
-      message: detail.message
+  if (!errors.isEmpty()) {
+    const errorMessages = errors.array().map(err => ({
+      field: err.path,
+      message: err.msg
     }));
 
-    return res.status(400).json({
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
       success: false,
       message: 'Validation failed',
-      errors
-    });
-  }
-
-  req.body = value;
-  next();
-};
-
-exports.loginValidation = (req, res, next) => {
-  const { error, value } = exports.loginSchema.validate(req.body, {
-    abortEarly: false,
-    stripUnknown: true
-  });
-
-  if (error) {
-    const errors = error.details.map(detail => ({
-      field: detail.path.join('.'),
-      message: detail.message
-    }));
-
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      errors
-    });
-  }
-
-  req.body = value;
-  next();
-};
-
-// Transaction validation middleware
-exports.transactionValidation = (req, res, next) => {
-  const { error, value } = exports.transactionSchema.validate(req.body, {
-    abortEarly: false,
-    stripUnknown: true
-  });
-
-  if (error) {
-    const errors = error.details.map(detail => ({
-      field: detail.path.join('.'),
-      message: detail.message
-    }));
-
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      errors
-    });
-  }
-
-  req.body = value;
-  next();
-};
-
-// ID validation middleware
-exports.idValidation = (req, res, next) => {
-  const id = req.params.id;
-  
-  if (!/^[0-9a-fA-F]{24}$/.test(id)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid ID format'
+      errors: errorMessages
     });
   }
   
   next();
 };
 
-// Pagination validation middleware
-exports.paginationValidation = (req, res, next) => {
-  const { error, value } = exports.paginationSchema.validate(req.query, {
-    abortEarly: false,
-    stripUnknown: true
-  });
-
-  if (error) {
-    const errors = error.details.map(detail => ({
-      field: detail.path.join('.'),
-      message: detail.message
-    }));
-
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      errors
-    });
-  }
-
-  req.query = value;
-  next();
-};
-
-// ==============================================
-// QUERY PARAMETER VALIDATION
-// ==============================================
-
-exports.paginationSchema = Joi.object({
-  page: Joi.number()
-    .integer()
-    .min(1)
-    .optional()
-    .default(1),
+// Auth Validation Rules
+const registerValidation = [
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Name is required')
+    .isLength({ min: 2, max: 50 }).withMessage('Name must be between 2 and 50 characters'),
   
-  limit: Joi.number()
-    .integer()
-    .min(1)
-    .max(100)
-    .optional()
-    .default(10)
-});
-
-exports.dateRangeSchema = Joi.object({
-  startDate: Joi.date()
-    .optional(),
+  body('email')
+    .trim()
+    .notEmpty().withMessage('Email is required')
+    .isEmail().withMessage('Please provide a valid email')
+    .normalizeEmail(),
   
-  endDate: Joi.date()
-    .greater(Joi.ref('startDate'))
-    .optional()
-    .messages({
-      'date.greater': 'End date must be after start date'
-    })
-});
-
-exports.sortSchema = Joi.object({
-  sortBy: Joi.string()
-    .optional()
-    .default('createdAt'),
+  body('password')
+    .notEmpty().withMessage('Password is required')
+    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+    .matches(/\d/).withMessage('Password must contain at least one number'),
   
-  order: Joi.string()
-    .valid('asc', 'desc')
+  validate
+];
+
+const loginValidation = [
+  body('email')
+    .trim()
+    .notEmpty().withMessage('Email is required')
+    .isEmail().withMessage('Please provide a valid email')
+    .normalizeEmail(),
+  
+  body('password')
+    .notEmpty().withMessage('Password is required'),
+  
+  validate
+];
+
+// Transaction Validation Rules
+const transactionValidation = [
+  body('type')
+    .notEmpty().withMessage('Transaction type is required')
+    .isIn(['income', 'expense']).withMessage('Type must be either income or expense'),
+  
+  body('amount')
+    .notEmpty().withMessage('Amount is required')
+    .isFloat({ min: 0.01 }).withMessage('Amount must be greater than 0'),
+  
+  body('category')
+    .trim()
+    .notEmpty().withMessage('Category is required'),
+  
+  body('description')
     .optional()
-    .default('desc')
-});
-
-// Validate query parameters
-exports.validateQuery = (schema) => {
-  return (req, res, next) => {
-    const { error, value } = schema.validate(req.query, {
-      abortEarly: false,
-      stripUnknown: true
-    });
-
-    if (error) {
-      const errors = error.details.map(detail => ({
-        field: detail.path.join('.'),
-        message: detail.message
-      }));
-
-      return res.status(400).json({
-        success: false,
-        message: 'Query validation failed',
-        errors
-      });
-    }
-
-    req.query = value;
-    next();
-  };
-};
-
-// ==============================================
-// CUSTOM VALIDATORS
-// ==============================================
-
-exports.isValidObjectId = (value, helpers) => {
-  if (!/^[0-9a-fA-F]{24}$/.test(value)) {
-    return helpers.error('any.invalid');
-  }
-  return value;
-};
-
-exports.isStrongPassword = (value, helpers) => {
-  const hasUpperCase = /[A-Z]/.test(value);
-  const hasLowerCase = /[a-z]/.test(value);
-  const hasNumber = /\d/.test(value);
-  const hasSpecialChar = /[@$!%*?&]/.test(value);
-
-  if (!hasUpperCase || !hasLowerCase || !hasNumber || !hasSpecialChar) {
-    return helpers.error('password.weak');
-  }
-
-  return value;
-};
-
-// ==============================================
-// SANITIZATION HELPERS
-// ==============================================
-
-exports.sanitizeInput = (input) => {
-  if (typeof input === 'string') {
-    return input
-      .trim()
-      .replace(/[<>]/g, '') // Remove < and >
-      .replace(/\0/g, ''); // Remove null bytes
-  }
-  return input;
-};
-
-exports.sanitizeObject = (obj) => {
-  const sanitized = {};
+    .trim()
+    .isLength({ max: 500 }).withMessage('Description must not exceed 500 characters'),
   
-  for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      sanitized[key] = exports.sanitizeInput(obj[key]);
-    }
-  }
+  body('date')
+    .optional()
+    .isISO8601().withMessage('Invalid date format'),
   
-  return sanitized;
+  body('paymentMethod')
+    .optional()
+    .trim(),
+  
+  validate
+];
+
+// Budget Validation Rules
+const budgetValidation = [
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Budget name is required')
+    .isLength({ max: 100 }).withMessage('Name must not exceed 100 characters'),
+  
+  body('category')
+    .trim()
+    .notEmpty().withMessage('Category is required'),
+  
+  body('amount')
+    .notEmpty().withMessage('Amount is required')
+    .isFloat({ min: 0.01 }).withMessage('Amount must be greater than 0'),
+  
+  body('period')
+    .notEmpty().withMessage('Period is required')
+    .isIn(['weekly', 'monthly', 'yearly']).withMessage('Invalid period'),
+  
+  body('startDate')
+    .notEmpty().withMessage('Start date is required')
+    .isISO8601().withMessage('Invalid start date format'),
+  
+  body('endDate')
+    .notEmpty().withMessage('End date is required')
+    .isISO8601().withMessage('Invalid end date format')
+    .custom((endDate, { req }) => {
+      if (new Date(endDate) <= new Date(req.body.startDate)) {
+        throw new Error('End date must be after start date');
+      }
+      return true;
+    }),
+  
+  body('alertThreshold')
+    .optional()
+    .isFloat({ min: 0, max: 100 }).withMessage('Alert threshold must be between 0 and 100'),
+  
+  validate
+];
+
+// Goal Validation Rules
+const goalValidation = [
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Goal name is required')
+    .isLength({ max: 100 }).withMessage('Name must not exceed 100 characters'),
+  
+  body('targetAmount')
+    .notEmpty().withMessage('Target amount is required')
+    .isFloat({ min: 0.01 }).withMessage('Target amount must be greater than 0'),
+  
+  body('currentAmount')
+    .optional()
+    .isFloat({ min: 0 }).withMessage('Current amount must be 0 or greater'),
+  
+  body('targetDate')
+    .notEmpty().withMessage('Target date is required')
+    .isISO8601().withMessage('Invalid target date format')
+    .custom((targetDate) => {
+      if (new Date(targetDate) <= new Date()) {
+        throw new Error('Target date must be in the future');
+      }
+      return true;
+    }),
+  
+  body('priority')
+    .optional()
+    .isIn(['low', 'medium', 'high']).withMessage('Invalid priority level'),
+  
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Description must not exceed 500 characters'),
+  
+  validate
+];
+
+// ID Param Validation
+const idValidation = [
+  param('id')
+    .isMongoId().withMessage('Invalid ID format'),
+  
+  validate
+];
+
+// Query Validation for Pagination
+const paginationValidation = [
+  query('page')
+    .optional()
+    .isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  
+  validate
+];
+
+module.exports = {
+  validate,
+  registerValidation,
+  loginValidation,
+  transactionValidation,
+  budgetValidation,
+  goalValidation,
+  idValidation,
+  paginationValidation
 };

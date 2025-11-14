@@ -1,129 +1,59 @@
+// backend/controllers/authController.js
+
 const User = require('../models/User');
 const { generateToken } = require('../utils/generateToken');
-const { AppError, asyncHandler } = require('../middleware/errorHandler');
-const { HTTP_STATUS, ERROR_MESSAGES } = require('../config/constants');
+const bcrypt = require('bcryptjs');
 
-/**
- * @desc Register a new user
- * @route POST /api/auth/register
- * @access Public
- */
-exports.register = asyncHandler(async (req, res, next) => {
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
+exports.register = async (req, res, next) => {
   try {
-    console.log('📝 Register request:', { 
-      name: req.body.name, 
-      email: req.body.email,
-      hasPassword: !!req.body.password
-    });
+    const { name, email, password } = req.body;
 
-    const { name, email, password, passwordConfirm } = req.body;
-
-    // Validation
-    if (!name || !email || !password || !passwordConfirm) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide all required fields: name, email, password, passwordConfirm'
-      });
-    }
-
-    if (password !== passwordConfirm) {
-      return res.status(400).json({
-        success: false,
-        message: 'Passwords do not match'
-      });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters'
-      });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-
-    // Check if user already exists
-    let userExists = await User.findOne({ email: normalizedEmail });
+    // Check if user exists
+    const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(409).json({
+      return res.status(400).json({
         success: false,
-        message: 'Email already registered'
+        message: 'User already exists with this email'
       });
     }
 
-    // Create new user
+    // Create user
     const user = await User.create({
-      name: name.trim(),
-      email: normalizedEmail,
+      name,
+      email,
       password
     });
 
-    console.log('✅ User created:', user._id);
-
-    // Generate token
-    const token = generateToken(user._id);
-
-    console.log('🔐 Token generated');
-
-    // Send response
-    return res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        monthlyIncome: user.monthlyIncome,
-        currency: user.currency
-      }
-    });
-  } catch (error) {
-    console.error('❌ Registration error:', error.message);
-    
-    // Handle MongoDB validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors)
-        .map(err => err.message)
-        .join(', ');
-      return res.status(400).json({
-        success: false,
-        message: `Validation error: ${messages}`
+    if (user) {
+      res.status(201).json({
+        success: true,
+        data: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          token: generateToken(user._id)
+        }
       });
     }
-
-    // Handle other errors
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Registration failed'
-    });
+  } catch (error) {
+    next(error);
   }
-});
+};
 
-/**
- * @desc Login user
- * @route POST /api/auth/login
- * @access Public
- */
-exports.login = asyncHandler(async (req, res, next) => {
+// @desc    Login user
+// @route   POST /api/auth/login
+// @access  Public
+exports.login = async (req, res, next) => {
   try {
-    console.log('🔓 Login request:', { email: req.body.email });
-
     const { email, password } = req.body;
 
-    // Validation
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide email and password'
-      });
-    }
-
-    // Find user and check password
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+    // Check for user
+    const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
-      console.log('❌ User not found:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -131,56 +61,36 @@ exports.login = asyncHandler(async (req, res, next) => {
     }
 
     // Check password
-    const isPasswordValid = await user.comparePassword(password);
+    const isMatch = await user.comparePassword(password);
 
-    if (!isPasswordValid) {
-      console.log('❌ Invalid password for user:', email);
+    if (!isMatch) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
-
-    // Generate token
-    const token = generateToken(user._id);
-
-    console.log('✅ Login successful:', user._id);
-
-    // Send response
-    return res.status(200).json({
+    res.json({
       success: true,
-      message: 'Login successful',
-      token,
-      user: {
-        id: user._id,
+      data: {
+        _id: user._id,
         name: user.name,
         email: user.email,
-        monthlyIncome: user.monthlyIncome,
-        currency: user.currency,
-        avatar: user.avatar
+        token: generateToken(user._id)
       }
     });
   } catch (error) {
-    console.error('❌ Login error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Login failed'
-    });
+    next(error);
   }
-});
+};
 
-/**
- * @desc Get current logged in user
- * @route GET /api/auth/me
- * @access Private
- */
-exports.getMe = asyncHandler(async (req, res, next) => {
+// @desc    Get user profile
+// @route   GET /api/auth/profile
+// @access  Private
+exports.getProfile = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    // req.user is set by auth middleware
+    const user = await User.findById(req.user._id).select('-password');
 
     if (!user) {
       return res.status(404).json({
@@ -189,58 +99,95 @@ exports.getMe = asyncHandler(async (req, res, next) => {
       });
     }
 
-    return res.status(200).json({
+    res.json({
       success: true,
-      user: {
-        id: user._id,
+      data: {
+        _id: user._id,
         name: user.name,
         email: user.email,
-        monthlyIncome: user.monthlyIncome,
-        currency: user.currency,
-        avatar: user.avatar,
-        isEmailVerified: user.isEmailVerified,
-        lastLogin: user.lastLogin
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
       }
     });
   } catch (error) {
-    console.error('❌ Get user error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to get user'
-    });
+    next(error);
   }
-});
+};
 
-/**
- * @desc Update password
- * @route PUT /api/auth/password
- * @access Private
- */
-exports.updatePassword = asyncHandler(async (req, res, next) => {
+// @desc    Logout user
+// @route   POST /api/auth/logout
+// @access  Private
+exports.logout = async (req, res, next) => {
   try {
-    const { currentPassword, newPassword, newPasswordConfirm } = req.body;
+    // Since we're using JWT tokens, logout is handled client-side
+    // This endpoint confirms the logout action
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-    // Validation
-    if (!currentPassword || !newPassword || !newPasswordConfirm) {
-      return res.status(400).json({
+// @desc    Update user profile
+// @route   PUT /api/auth/profile
+// @access  Private
+exports.updateProfile = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: 'Please provide all required fields'
+        message: 'User not found'
       });
     }
 
-    if (newPassword !== newPasswordConfirm) {
-      return res.status(400).json({
-        success: false,
-        message: 'New passwords do not match'
-      });
+    // Update fields
+    user.name = req.body.name || user.name;
+    user.email = req.body.email || user.email;
+
+    if (req.body.password) {
+      user.password = req.body.password;
     }
 
-    const user = await User.findById(req.user.id).select('+password');
+    const updatedUser = await user.save();
+
+    res.json({
+      success: true,
+      data: {
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        token: generateToken(updatedUser._id)
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Change password
+// @route   PUT /api/auth/change-password
+// @access  Private
+exports.changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user._id).select('+password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
 
     // Check current password
-    const isPasswordValid = await user.comparePassword(currentPassword);
+    const isMatch = await user.comparePassword(currentPassword);
 
-    if (!isPasswordValid) {
+    if (!isMatch) {
       return res.status(401).json({
         success: false,
         message: 'Current password is incorrect'
@@ -251,27 +198,11 @@ exports.updatePassword = asyncHandler(async (req, res, next) => {
     user.password = newPassword;
     await user.save();
 
-    return res.status(200).json({
+    res.json({
       success: true,
       message: 'Password updated successfully'
     });
   } catch (error) {
-    console.error('❌ Update password error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to update password'
-    });
+    next(error);
   }
-});
-
-/**
- * @desc Logout user
- * @route POST /api/auth/logout
- * @access Private
- */
-exports.logout = asyncHandler(async (req, res, next) => {
-  return res.status(200).json({
-    success: true,
-    message: 'Logged out successfully'
-  });
-});
+};

@@ -1,91 +1,23 @@
+// backend/controllers/goalController.js
+
 const Goal = require('../models/Goal');
 
-// @desc    Get all goals
-// @route   GET /api/goals
-// @access  Private
-exports.getGoals = async (req, res, next) => {
-  try {
-    const goals = await Goal.find({ user: req.user._id }).sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: goals.length,
-      data: goals
-    });
-  } catch (error) {
-    console.error('Error getting goals:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching goals'
-    });
-  }
-};
-
-// @desc    Get a single goal
-// @route   GET /api/goals/:id
-// @access  Private
-exports.getGoal = async (req, res, next) => {
-  try {
-    const goal = await Goal.findById(req.params.id);
-
-    if (!goal) {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-
-    // Check if user owns the goal
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to access this goal'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: goal
-    });
-  } catch (error) {
-    console.error('Error getting goal:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching goal'
-    });
-  }
-};
-
-// @desc    Create a new goal
+// @desc    Create a new financial goal
 // @route   POST /api/goals
 // @access  Private
 exports.createGoal = async (req, res, next) => {
   try {
-    const {
-      name,
-      description,
-      targetAmount,
-      currentAmount,
-      deadline,
-      targetDate,
-      category,
-      priority
-    } = req.body;
-
-    console.log('🎯 Creating goal:', { name, targetAmount, deadline, targetDate });
-
-    // Use deadline or targetDate (support both field names)
-    const goalDate = deadline || targetDate;
+    const { name, targetAmount, currentAmount, deadline, priority, description } = req.body;
 
     // Validate required fields
-    if (!name || !targetAmount || !goalDate) {
+    if (!name || !targetAmount) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide name, targetAmount, and deadline (or targetDate)'
+        message: 'Please provide goal name and target amount'
       });
     }
 
-    // Validate target amount
+    // Validate amounts
     if (targetAmount <= 0) {
       return res.status(400).json({
         success: false,
@@ -93,16 +25,6 @@ exports.createGoal = async (req, res, next) => {
       });
     }
 
-    // Validate deadline is in the future
-    const deadlineDate = new Date(goalDate);
-    if (deadlineDate <= new Date()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Deadline must be in the future'
-      });
-    }
-
-    // Validate current amount if provided
     if (currentAmount && currentAmount < 0) {
       return res.status(400).json({
         success: false,
@@ -110,44 +32,121 @@ exports.createGoal = async (req, res, next) => {
       });
     }
 
+    // Validate priority
+    const validPriorities = ['low', 'medium', 'high'];
+    if (priority && !validPriorities.includes(priority)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Priority must be low, medium, or high'
+      });
+    }
+
+    // Calculate progress percentage
+    const current = currentAmount || 0;
+    const progress = (current / targetAmount) * 100;
+
     // Create goal
     const goal = await Goal.create({
-      user: req.user._id,
+      userId: req.user._id,
       name,
-      description: description || '',
       targetAmount,
-      currentAmount: currentAmount || 0,
-      deadline: deadlineDate,
-      category: category || 'Other',
+      currentAmount: current,
+      deadline,
       priority: priority || 'medium',
-      status: 'active',
-      progress: (currentAmount || 0) / targetAmount * 100
+      description,
+      progress: Math.min(progress, 100), // Cap at 100%
+      status: progress >= 100 ? 'completed' : 'in-progress'
     });
-
-    console.log('✅ Goal created:', goal._id);
 
     res.status(201).json({
       success: true,
       message: 'Goal created successfully',
-      data: goal
+      data: { goal }
     });
   } catch (error) {
-    console.error('Error creating goal:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error creating goal'
-    });
+    next(error);
   }
 };
 
-// @desc    Update a goal
+// @desc    Get all goals
+// @route   GET /api/goals
+// @access  Private
+exports.getGoals = async (req, res, next) => {
+  try {
+    const { status, priority, sort } = req.query;
+
+    // Build query
+    const query = { userId: req.user._id };
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (priority) {
+      query.priority = priority;
+    }
+
+    // Build sort
+    let sortOption = '-createdAt'; // Default: newest first
+
+    if (sort === 'deadline') {
+      sortOption = 'deadline';
+    } else if (sort === 'progress') {
+      sortOption = '-progress';
+    } else if (sort === 'priority') {
+      // Custom sort: high > medium > low
+      sortOption = '-priority';
+    } else if (sort === 'amount') {
+      sortOption = '-targetAmount';
+    }
+
+    const goals = await Goal.find(query).sort(sortOption);
+
+    res.json({
+      success: true,
+      count: goals.length,
+      data: { goals }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get goal by ID
+// @route   GET /api/goals/:id
+// @access  Private
+exports.getGoalById = async (req, res, next) => {
+  try {
+    const goal = await Goal.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+
+    if (!goal) {
+      return res.status(404).json({
+        success: false,
+        message: 'Goal not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { goal }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update goal
 // @route   PUT /api/goals/:id
 // @access  Private
 exports.updateGoal = async (req, res, next) => {
   try {
-    const { name, description, targetAmount, currentAmount, deadline, priority, status } = req.body;
-
-    const goal = await Goal.findById(req.params.id);
+    let goal = await Goal.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
 
     if (!goal) {
       return res.status(404).json({
@@ -156,99 +155,103 @@ exports.updateGoal = async (req, res, next) => {
       });
     }
 
-    // Check if user owns the goal
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update this goal'
-      });
-    }
+    const {
+      name,
+      targetAmount,
+      currentAmount,
+      deadline,
+      priority,
+      description,
+      status
+    } = req.body;
 
+    // Update fields
     if (name) goal.name = name;
     if (description !== undefined) goal.description = description;
-    if (targetAmount) goal.targetAmount = targetAmount;
-    if (currentAmount !== undefined) goal.currentAmount = currentAmount;
     if (deadline) goal.deadline = deadline;
-    if (priority) goal.priority = priority;
-    if (status) goal.status = status;
 
-    // Update progress
-    if (currentAmount !== undefined || targetAmount) {
-      goal.progress = ((currentAmount || goal.currentAmount) / (targetAmount || goal.targetAmount)) * 100;
+    if (targetAmount !== undefined) {
+      if (targetAmount <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Target amount must be greater than 0'
+        });
+      }
+      goal.targetAmount = targetAmount;
+    }
+
+    if (currentAmount !== undefined) {
+      if (currentAmount < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current amount cannot be negative'
+        });
+      }
+      goal.currentAmount = currentAmount;
+    }
+
+    if (priority) {
+      const validPriorities = ['low', 'medium', 'high'];
+      if (!validPriorities.includes(priority)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Priority must be low, medium, or high'
+        });
+      }
+      goal.priority = priority;
+    }
+
+    if (status) {
+      const validStatuses = ['not-started', 'in-progress', 'completed', 'abandoned'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid status'
+        });
+      }
+      goal.status = status;
+    }
+
+    // Recalculate progress
+    goal.progress = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+
+    // Auto-update status based on progress
+    if (goal.progress >= 100 && goal.status !== 'completed') {
+      goal.status = 'completed';
+    } else if (goal.progress > 0 && goal.status === 'not-started') {
+      goal.status = 'in-progress';
     }
 
     await goal.save();
 
-    console.log('✅ Goal updated:', goal._id);
-
-    res.status(200).json({
+    res.json({
       success: true,
       message: 'Goal updated successfully',
-      data: goal
+      data: { goal }
     });
   } catch (error) {
-    console.error('Error updating goal:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error updating goal'
-    });
+    next(error);
   }
 };
 
-// @desc    Delete a goal
-// @route   DELETE /api/goals/:id
+// @desc    Add contribution to goal
+// @route   POST /api/goals/:id/contribute
 // @access  Private
-exports.deleteGoal = async (req, res, next) => {
-  try {
-    const goal = await Goal.findById(req.params.id);
-
-    if (!goal) {
-      return res.status(404).json({
-        success: false,
-        message: 'Goal not found'
-      });
-    }
-
-    // Check if user owns the goal
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to delete this goal'
-      });
-    }
-
-    await Goal.findByIdAndDelete(req.params.id);
-
-    console.log('✅ Goal deleted:', req.params.id);
-
-    res.status(200).json({
-      success: true,
-      message: 'Goal deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting goal:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error deleting goal'
-    });
-  }
-};
-
-// @desc    Contribute to goal
-// @route   PATCH /api/goals/:id/progress
-// @access  Private
-exports.updateGoalProgress = async (req, res, next) => {
+exports.addContribution = async (req, res, next) => {
   try {
     const { amount } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid amount'
+        message: 'Contribution amount must be greater than 0'
       });
     }
 
-    const goal = await Goal.findById(req.params.id);
+    const goal = await Goal.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
 
     if (!goal) {
       return res.status(404).json({
@@ -257,44 +260,40 @@ exports.updateGoalProgress = async (req, res, next) => {
       });
     }
 
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update this goal'
-      });
-    }
-
+    // Add to current amount
     goal.currentAmount += amount;
-    goal.progress = (goal.currentAmount / goal.targetAmount) * 100;
 
-    if (goal.currentAmount >= goal.targetAmount) {
+    // Recalculate progress
+    goal.progress = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+
+    // Update status if goal is reached
+    if (goal.progress >= 100) {
       goal.status = 'completed';
+    } else if (goal.status === 'not-started') {
+      goal.status = 'in-progress';
     }
 
     await goal.save();
 
-    console.log('✅ Goal progress updated:', goal._id);
-
-    res.status(200).json({
+    res.json({
       success: true,
-      message: 'Goal progress updated successfully',
-      data: goal
+      message: `Added $${amount} to goal`,
+      data: { goal }
     });
   } catch (error) {
-    console.error('Error updating goal progress:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error updating goal progress'
-    });
+    next(error);
   }
 };
 
-// @desc    Get goal progress
-// @route   GET /api/goals/:id/progress
+// @desc    Delete goal
+// @route   DELETE /api/goals/:id
 // @access  Private
-exports.getGoalProgress = async (req, res, next) => {
+exports.deleteGoal = async (req, res, next) => {
   try {
-    const goal = await Goal.findById(req.params.id);
+    const goal = await Goal.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
 
     if (!goal) {
       return res.status(404).json({
@@ -303,126 +302,47 @@ exports.getGoalProgress = async (req, res, next) => {
       });
     }
 
-    if (goal.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to access this goal'
-      });
-    }
+    await goal.deleteOne();
 
-    res.status(200).json({
+    res.json({
       success: true,
-      data: {
-        goalId: goal._id,
-        name: goal.name,
-        progress: goal.progress,
-        currentAmount: goal.currentAmount,
-        targetAmount: goal.targetAmount,
-        status: goal.status
-      }
+      message: 'Goal deleted successfully'
     });
   } catch (error) {
-    console.error('Error getting goal progress:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching goal progress'
-    });
+    next(error);
   }
 };
 
-// @desc    Get active goals
-// @route   GET /api/goals/status/active
-// @access  Private
-exports.getActiveGoals = async (req, res, next) => {
-  try {
-    const goals = await Goal.find({ user: req.user._id, status: 'active' }).sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: goals.length,
-      data: goals
-    });
-  } catch (error) {
-    console.error('Error getting active goals:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching goals'
-    });
-  }
-};
-
-// @desc    Get completed goals
-// @route   GET /api/goals/status/completed
-// @access  Private
-exports.getCompletedGoals = async (req, res, next) => {
-  try {
-    const goals = await Goal.find({ user: req.user._id, status: 'completed' }).sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: goals.length,
-      data: goals
-    });
-  } catch (error) {
-    console.error('Error getting completed goals:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching goals'
-    });
-  }
-};
-
-// @desc    Get goal stats
+// @desc    Get goal statistics
 // @route   GET /api/goals/stats
 // @access  Private
 exports.getGoalStats = async (req, res, next) => {
   try {
-    const goals = await Goal.find({ user: req.user._id });
+    const goals = await Goal.find({ userId: req.user._id });
 
     const stats = {
       total: goals.length,
-      active: goals.filter(g => g.status === 'active').length,
-      completed: goals.filter(g => g.status === 'completed').length,
+      completed: goals.filter((g) => g.status === 'completed').length,
+      inProgress: goals.filter((g) => g.status === 'in-progress').length,
+      notStarted: goals.filter((g) => g.status === 'not-started').length,
       totalTarget: goals.reduce((sum, g) => sum + g.targetAmount, 0),
       totalSaved: goals.reduce((sum, g) => sum + g.currentAmount, 0),
-      averageProgress: goals.length > 0 ? goals.reduce((sum, g) => sum + g.progress, 0) / goals.length : 0
+      averageProgress:
+        goals.length > 0
+          ? goals.reduce((sum, g) => sum + g.progress, 0) / goals.length
+          : 0
     };
 
-    res.status(200).json({
+    stats.remaining = stats.totalTarget - stats.totalSaved;
+    stats.overallProgress = stats.totalTarget > 0 
+      ? (stats.totalSaved / stats.totalTarget) * 100 
+      : 0;
+
+    res.json({
       success: true,
-      data: stats
+      data: { stats }
     });
   } catch (error) {
-    console.error('Error getting goal stats:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching goal stats'
-    });
-  }
-};
-
-// @desc    Get recommendations
-// @route   GET /api/goals/recommendations/smart
-// @access  Private
-exports.getRecommendations = async (req, res, next) => {
-  try {
-    const goals = await Goal.find({ user: req.user._id });
-
-    const recommendations = {
-      activeGoals: goals.filter(g => g.status === 'active').length,
-      recommendedNewGoals: 3 - goals.filter(g => g.status === 'active').length,
-      totalProgress: goals.length > 0 ? goals.reduce((sum, g) => sum + g.progress, 0) / goals.length : 0
-    };
-
-    res.status(200).json({
-      success: true,
-      data: recommendations
-    });
-  } catch (error) {
-    console.error('Error getting recommendations:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching recommendations'
-    });
+    next(error);
   }
 };
